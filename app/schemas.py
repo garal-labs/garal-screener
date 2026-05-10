@@ -1,53 +1,65 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 from datetime import date, datetime
 
 
-# ── Cartera ───────────────────────────────────────────────────────────────────
+# -- Cartera ------------------------------------------------------------------
 
 class CarteraCreate(BaseModel):
     nombre: str
     descripcion: Optional[str] = None
 
 class CarteraOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     nombre: str
     descripcion: Optional[str]
     created_at: datetime
-    class Config:
-        from_attributes = True
 
 
-# ── Instrumento ───────────────────────────────────────────────────────────────
+# -- Instrumento --------------------------------------------------------------
 
 class InstrumentoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     isin: str
-    ticker: Optional[str]
-    nombre: Optional[str]
-    tipo: Optional[str]
-    sector: Optional[str]
-    pais: Optional[str]
-    moneda: Optional[str]
-    exchange: Optional[str]
-    class Config:
-        from_attributes = True
+    ticker: Optional[str] = None
+    nombre: Optional[str] = None
+    tipo: Optional[str] = None
+    sector: Optional[str] = None
+    pais: Optional[str] = None
+    moneda: Optional[str] = None
+    exchange: Optional[str] = None
+
+class InstrumentoUpdate(BaseModel):
+    """Schema para PATCH /instrumentos/{id} — todos los campos opcionales."""
+    ticker: Optional[str] = None
+    nombre: Optional[str] = None
+    tipo: Optional[str] = None
+    sector: Optional[str] = None
+    pais: Optional[str] = None
+    moneda: Optional[str] = None
+    exchange: Optional[str] = None
 
 
-# ── Movimiento ────────────────────────────────────────────────────────────────
+# -- Movimiento ---------------------------------------------------------------
 
 class MovimientoCreate(BaseModel):
     cartera_id: int
     isin: str
-    tipo: str                               # compra | venta
+    tipo: str = Field(pattern="^(compra|venta)$")   # validacion en schema
     fecha: date
     cantidad: float = Field(gt=0)
     precio: float = Field(gt=0)
-    comision: Optional[float] = 0.0
-    tipo_cambio: Optional[float] = None     # si es None, se asume moneda EUR
+    comision: Optional[float] = Field(default=0.0, ge=0)
+    tipo_cambio: Optional[float] = Field(default=None, gt=0)
     notas: Optional[str] = None
 
 class MovimientoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     cartera_id: int
     instrumento: InstrumentoOut
@@ -59,28 +71,24 @@ class MovimientoOut(BaseModel):
     tipo_cambio: Optional[float]
     notas: Optional[str]
     created_at: datetime
-    class Config:
-        from_attributes = True
 
 
-# ── Posición calculada ────────────────────────────────────────────────────────
+# -- Posicion calculada -------------------------------------------------------
 
 class PosicionOut(BaseModel):
     instrumento: InstrumentoOut
-    # FIFO
     cantidad_actual: float
     coste_total: float
     precio_medio: float
     plusvalia_realizada: float
-    # Tiempo real
-    precio_actual: Optional[float]
-    valor_actual: Optional[float]
-    plusvalia_latente: Optional[float]
-    rentabilidad_pct: Optional[float]
-    plusvalia_total: Optional[float]
+    precio_actual: Optional[float] = None
+    valor_actual: Optional[float] = None
+    plusvalia_latente: Optional[float] = None
+    rentabilidad_pct: Optional[float] = None
+    plusvalia_total: Optional[float] = None
 
 
-# ── Resumen cartera ───────────────────────────────────────────────────────────
+# -- Resumen cartera ----------------------------------------------------------
 
 class ResumenCartera(BaseModel):
     cartera: CarteraOut
@@ -94,7 +102,7 @@ class ResumenCartera(BaseModel):
     posiciones: List[PosicionOut]
 
 
-# ── Análisis / agrupaciones ───────────────────────────────────────────────────
+# -- Analisis / agrupaciones --------------------------------------------------
 
 class GrupoAnalisis(BaseModel):
     nombre: str

@@ -3,8 +3,11 @@ Servicio de cálculos financieros.
 Toda la lógica de FIFO, plusvalías y rentabilidades vive aquí.
 """
 from typing import List, Dict, Any
-from datetime import date
 from collections import deque
+
+
+class VentaInvalidaError(ValueError):
+    """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
 
 
 def calcular_posicion_fifo(movimientos: List[Any]) -> Dict:
@@ -23,7 +26,8 @@ def calcular_posicion_fifo(movimientos: List[Any]) -> Dict:
     lotes = deque()
     plusvalia_realizada = 0.0
 
-    for mov in sorted(movimientos, key=lambda m: m.fecha):
+    # Orden determinístico: fecha ASC, id ASC para desempate intradía
+    for mov in sorted(movimientos, key=lambda m: (m.fecha, m.id)):
         precio_eur = _precio_en_eur(mov)
         comision = mov.comision or 0.0
 
@@ -50,6 +54,13 @@ def calcular_posicion_fifo(movimientos: List[Any]) -> Dict:
                     coste_vendido += cantidad_vender * precio_lote
                     lote[0] -= cantidad_vender
                     cantidad_vender = 0
+
+            # Si después del while todavía queda por vender, los datos son inconsistentes
+            if cantidad_vender > 0:
+                raise VentaInvalidaError(
+                    f"Movimiento id={mov.id}: intento de vender {mov.cantidad} unidades "
+                    f"pero los lotes FIFO no tienen suficiente stock."
+                )
 
             # Ingreso de la venta en EUR menos comisión
             ingreso_venta = (mov.precio * mov.cantidad * _tipo_cambio(mov)) - comision
@@ -97,12 +108,13 @@ def calcular_resumen_cartera(posiciones: List[Dict]) -> Dict:
     Cada posición debe tener: valor_actual, coste_total, plusvalia_latente,
     plusvalia_realizada, rentabilidad_pct.
     """
-    valor_total = sum(p.get("valor_actual", 0) for p in posiciones)
+    valor_total = sum(p.get("valor_actual") or 0 for p in posiciones)
     coste_total = sum(p.get("coste_total", 0) for p in posiciones)
-    plusvalia_latente = sum(p.get("plusvalia_latente", 0) for p in posiciones)
+    plusvalia_latente = sum(p.get("plusvalia_latente") or 0 for p in posiciones)
     plusvalia_realizada = sum(p.get("plusvalia_realizada", 0) for p in posiciones)
     plusvalia_total = plusvalia_latente + plusvalia_realizada
-    rentabilidad_total_pct = round((plusvalia_latente / coste_total * 100), 2) if coste_total > 0 else 0.0
+    # Rentabilidad sobre coste total (latente + realizada)
+    rentabilidad_total_pct = round((plusvalia_total / coste_total * 100), 2) if coste_total > 0 else 0.0
 
     return {
         "valor_total": round(valor_total, 2),
@@ -118,14 +130,18 @@ def calcular_resumen_cartera(posiciones: List[Dict]) -> Dict:
 def agrupar_por_campo(posiciones: List[Dict], campo: str) -> List[Dict]:
     """
     Agrupa posiciones por sector, país, tipo, etc.
+    Usa valor_actual si hay precio; si no, usa coste_total como fallback.
     Devuelve lista ordenada de mayor a menor peso.
     """
     grupos: Dict[str, float] = {}
-    valor_total = sum(p.get("valor_actual", 0) for p in posiciones)
 
     for pos in posiciones:
         clave = pos.get(campo) or "Sin clasificar"
-        grupos[clave] = grupos.get(clave, 0) + pos.get("valor_actual", 0)
+        # valor_actual puede ser None si FMP no devolvio precio para ese ticker
+        valor = pos.get("valor_actual") or pos.get("coste_total") or 0
+        grupos[clave] = grupos.get(clave, 0) + valor
+
+    valor_total = sum(grupos.values())
 
     resultado = [
         {
@@ -145,7 +161,8 @@ def _tipo_cambio(mov) -> float:
     Devuelve el tipo de cambio a aplicar.
     Si no se ha introducido, asume 1.0 (misma moneda que EUR o ya en EUR).
     """
-    return mov.tipo_cambio if mov.tipo_cambio else 1.0
+    # is not None para no confundir tipo_cambio=0.0 (inválido) con ausente
+    return mov.tipo_cambio if mov.tipo_cambio is not None else 1.0
 
 
 def _precio_en_eur(mov) -> float:
