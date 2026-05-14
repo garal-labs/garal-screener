@@ -108,7 +108,7 @@ def calcular_resumen_cartera(posiciones: List[Dict]) -> Dict:
     Cada posición debe tener: valor_actual, coste_total, plusvalia_latente,
     plusvalia_realizada, rentabilidad_pct.
     """
-    valor_total = sum(p.get("valor_actual") or 0 for p in posiciones)
+    valor_total = sum(p.get("valor_actual") or p.get("coste_total") or 0 for p in posiciones)
     coste_total = sum(p.get("coste_total", 0) for p in posiciones)
     plusvalia_latente = sum(p.get("plusvalia_latente") or 0 for p in posiciones)
     plusvalia_realizada = sum(p.get("plusvalia_realizada", 0) for p in posiciones)

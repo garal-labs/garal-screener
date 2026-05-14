@@ -1,127 +1,226 @@
 """
-Servicio de precios (FMP) y autodescubrimiento de instrumentos (Claude IA).
+Servicio de metadatos y precios de instrumentos financieros.
+
+- Ticker desde ISIN  → OpenFIGI (gratuito, sin API key)
+- Metadatos + precio → yfinance (Yahoo Finance, sin API key)
 """
+import asyncio
 import httpx
-import os
-import json
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
+import yfinance as yf
 
 
-def _fmp_key() -> str:
-    key = os.getenv("FMP_API_KEY")
-    if not key:
-        raise ValueError("FMP_API_KEY no está configurada en las variables de entorno")
-    return key
+# -- Cabeceras Yahoo ----------------------------------------------------------
+
+_YAHOO_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json",
+}
 
 
-def _anthropic_key() -> str:
-    key = os.getenv("ANTHROPIC_API_KEY")
-    if not key:
-        raise ValueError("ANTHROPIC_API_KEY no está configurada en las variables de entorno")
-    return key
+# -- Mapeo ISIN → exchange ----------------------------------------------------
+
+# Mapeo país del ISIN → (exchCode OpenFIGI, sufijo Yahoo Finance)
+_ISIN_EXCHANGE_MAP = {
+    "ES": ("SM", ".MC"),   # BME Madrid
+    "DE": ("GR", ".DE"),   # XETRA
+    "FR": ("FP", ".PA"),   # Euronext Paris
+    "GB": ("LN", ".L"),    # LSE
+    "IT": ("IM", ".MI"),   # Borsa Italiana
+    "NL": ("NA", ".AS"),   # Euronext Amsterdam
+    "PT": ("PL", ".LS"),   # Euronext Lisboa
+    "CH": ("SW", ".SW"),   # SIX Swiss
+    "JP": ("JT", ".T"),    # TSE
+    "US": ("US", ""),      # NYSE/NASDAQ — sin sufijo
+    "IE": ("NA", ".AS"),   # ETFs irlandeses → Euronext Amsterdam (más completo en Yahoo)
+    "LU": ("NA", ".AS"),   # ETFs luxemburgueses → Euronext Amsterdam
+}
 
 
-# -- Precios en tiempo real ---------------------------------------------------
+# -- OpenFIGI: ISIN → ticker --------------------------------------------------
 
-async def obtener_precio_actual(ticker: str) -> Optional[float]:
-    """Devuelve el precio actual de un ticker via FMP."""
-    try:
-        url = f"{FMP_BASE}/quote-short/{ticker}?apikey={_fmp_key()}"
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            data = r.json()
-            if data and isinstance(data, list):
-                return data[0].get("price")
-    except Exception:
-        return None
-    return None
-
-
-async def obtener_precios_batch(tickers: list[str]) -> Dict[str, float]:
-    """Obtiene precios de múltiples tickers en una sola llamada a FMP."""
-    if not tickers:
-        return {}
-    try:
-        symbols = ",".join(tickers)
-        url = f"{FMP_BASE}/quote-short/{symbols}?apikey={_fmp_key()}"
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            data = r.json()
-            if isinstance(data, list):
-                return {
-                    item["symbol"]: item["price"]
-                    for item in data
-                    if "symbol" in item and "price" in item
-                }
-    except Exception:
-        return {}
-    return {}
-
-
-async def buscar_ticker_por_isin(isin: str) -> Optional[str]:
-    """Busca el ticker en FMP dado un ISIN."""
-    try:
-        url = f"{FMP_BASE}/search?query={isin}&limit=5&apikey={_fmp_key()}"
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            data = r.json()
-            if data and isinstance(data, list):
-                return data[0].get("symbol")
-    except Exception:
-        return None
-    return None
-
-
-# -- Autodescubrimiento por IA ------------------------------------------------
-
-async def autodescubrir_instrumento(isin: str, nombre_hint: str = "") -> Dict:
+async def _buscar_ticker_por_isin(isin: str) -> Optional[str]:
     """
-    Usa Claude para obtener nombre, sector, pais, moneda, tipo y exchange
-    a partir del ISIN. Devuelve dict con los campos encontrados.
-    Si falla por cualquier motivo devuelve dict vacío (nunca rompe el flujo).
+    Resuelve ISIN → ticker via OpenFIGI (gratuito, sin API key).
+    Prioriza el exchange del país de origen del ISIN.
     """
-    prompt = f"""Given this financial instrument:
-ISIN: {isin}
-Name hint: {nombre_hint or "unknown"}
-
-Return ONLY a valid JSON object with these exact fields (no markdown, no explanation):
-{{
-  "nombre": "official full name of the instrument",
-  "tipo": "accion | etf | fondo | otro",
-  "sector": "sector in Spanish (Tecnologia, Salud, Finanzas, Consumo Discrecional, Consumo Basico, Energia, Industria, Inmobiliario, Materiales, Utilities, Telecomunicaciones, Diversificado)",
-  "pais": "country of origin in Spanish",
-  "moneda": "ISO currency code (EUR, USD, JPY, GBP, CHF...)",
-  "exchange": "main exchange where it trades (NYSE, NASDAQ, BME, XETRA, TSE, LSE, EURONEXT...)"
-}}
-
-If you are not sure about a field, use null. Be concise and accurate."""
-
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": _anthropic_key(),
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": 300,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
+                "https://api.openfigi.com/v3/mapping",
+                headers={"Content-Type": "application/json"},
+                json=[{"idType": "ID_ISIN", "idValue": isin}],
             )
             r.raise_for_status()
             data = r.json()
-            text = data["content"][0]["text"]
-            clean = text.replace("```json", "").replace("```", "").strip()
-            return json.loads(clean)
-    except Exception:
-        # Si la IA falla, devolvemos dict vacío — el instrumento se crea igualmente
-        # y el usuario puede rellenar los datos manualmente via PATCH
+            if not data or "data" not in data[0]:
+                return None
+
+            resultados = data[0]["data"]
+            pais = isin[:2].upper()
+            exch_code, sufijo = _ISIN_EXCHANGE_MAP.get(pais, ("", ""))
+
+            # 1. Buscar en el exchange preferido del país de origen
+            if exch_code:
+                for item in resultados:
+                    if item.get("exchCode") == exch_code:
+                        return item.get("ticker", "") + sufijo
+
+            # 2. Fallback: preferir exchange US (NYSE/NASDAQ) si existe
+            for item in resultados:
+                if item.get("exchCode") == "US":
+                    return item.get("ticker", "")
+
+            # 3. Último recurso: primer resultado
+            return resultados[0].get("ticker")
+    except Exception as e:
+        print(f"[OpenFIGI] Error resolviendo ISIN {isin}: {e}")
+        return None
+
+
+async def _buscar_tickers_en_yahoo(isin: str) -> List[str]:
+    """
+    Busca todos los tickers candidatos en Yahoo Finance por ISIN.
+    Devuelve lista ordenada por relevancia para iterar hasta encontrar uno válido.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10, headers=_YAHOO_HEADERS, follow_redirects=True) as client:
+            r = await client.get(
+                "https://query1.finance.yahoo.com/v1/finance/search",
+                params={"q": isin, "lang": "en-US", "type": "quotes"},
+            )
+            r.raise_for_status()
+            quotes = r.json().get("quotes", [])
+            return [q["symbol"] for q in quotes if q.get("symbol")]
+    except Exception as e:
+        print(f"[Yahoo Search] Error buscando ISIN {isin}: {e}")
+        return []
+
+
+# -- yfinance: metadatos + precio ---------------------------------------------
+
+def _tipo_desde_quote_type(quote_type: str) -> str:
+    mapping = {
+        "EQUITY": "accion",
+        "ETF": "etf",
+        "MUTUALFUND": "fondo",
+    }
+    return mapping.get((quote_type or "").upper(), "otro")
+
+
+def _obtener_info_yfinance(ticker: str) -> Optional[Dict]:
+    """
+    Obtiene metadatos + precio via yfinance (síncrono).
+    Se ejecuta en un executor para no bloquear el event loop.
+    """
+    try:
+        t = yf.Ticker(ticker)
+        info = t.info
+
+        if not info or info.get("trailingPegRatio") is None and not info.get("longName"):
+            # yfinance devuelve un dict vacío o inútil si el ticker no existe
+            return None
+
+        quote_type = info.get("quoteType", "")
+        tipo = _tipo_desde_quote_type(quote_type)
+
+        precio = (
+            info.get("regularMarketPrice")
+            or info.get("currentPrice")
+            or info.get("previousClose")
+        )
+
+        return {
+            "nombre": info.get("longName") or info.get("shortName"),
+            "tipo": tipo,
+            "sector": info.get("sector"),
+            "pais": info.get("country"),
+            "moneda": info.get("currency"),
+            "exchange": info.get("exchange"),
+            "precio": float(precio) if precio else None,
+        }
+    except Exception as e:
+        print(f"[yfinance] Error obteniendo info de {ticker}: {e}")
+        return None
+
+
+# -- API pública --------------------------------------------------------------
+
+async def enriquecer_por_isin(isin: str) -> Optional[Dict]:
+    """
+    Resuelve ISIN → metadatos completos con estrategia en cascada:
+    1. OpenFIGI → ticker → yfinance
+    2. Si falla: búsqueda directa por ISIN en Yahoo → yfinance
+    Devuelve dict con ticker, nombre, tipo, sector, pais, moneda, exchange.
+    Devuelve None si todas las fuentes fallan.
+    """
+    loop = asyncio.get_event_loop()
+
+    # 1. Intentar via OpenFIGI
+    ticker = await _buscar_ticker_por_isin(isin)
+    if ticker:
+        perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
+        if perfil:
+            return {
+                "ticker": ticker,
+                "nombre": perfil.get("nombre"),
+                "tipo": perfil.get("tipo"),
+                "sector": perfil.get("sector"),
+                "pais": perfil.get("pais"),
+                "moneda": perfil.get("moneda"),
+                "exchange": perfil.get("exchange"),
+            }
+        print(f"[yfinance] Ticker {ticker} no encontrado, intentando búsqueda directa por ISIN...")
+
+    # 2. Fallback: búsqueda directa en Yahoo por ISIN, iterando candidatos
+    candidatos = await _buscar_tickers_en_yahoo(isin)
+    if not candidatos:
+        print(f"[Yahoo Search] No se encontró ningún ticker para ISIN {isin}")
+        return None
+
+    for ticker in candidatos:
+        perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
+        if perfil:
+            return {
+                "ticker": ticker,
+                "nombre": perfil.get("nombre"),
+                "tipo": perfil.get("tipo"),
+                "sector": perfil.get("sector"),
+                "pais": perfil.get("pais"),
+                "moneda": perfil.get("moneda"),
+                "exchange": perfil.get("exchange"),
+            }
+
+    print(f"[yfinance] Ningún candidato de Yahoo funcionó para ISIN {isin}: {candidatos}")
+    return None
+
+
+async def obtener_precio_actual(ticker: str) -> Optional[float]:
+    """Obtiene el precio actual de un ticker via yfinance."""
+    if not ticker:
+        return None
+    loop = asyncio.get_event_loop()
+    perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
+    return perfil.get("precio") if perfil else None
+
+
+async def obtener_precios_batch(tickers: list[str]) -> Dict[str, float]:
+    """Obtiene precios de múltiples tickers en paralelo via yfinance."""
+    if not tickers:
         return {}
+
+    resultados = await asyncio.gather(
+        *[obtener_precio_actual(t) for t in tickers],
+        return_exceptions=True
+    )
+
+    return {
+        ticker: precio
+        for ticker, precio in zip(tickers, resultados)
+        if isinstance(precio, float)
+    }

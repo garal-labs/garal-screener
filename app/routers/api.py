@@ -40,29 +40,50 @@ def eliminar_cartera(cartera_id: int, db: Session = Depends(get_db)):
 
 @router.get("/instrumentos/autodescubrir/{isin}", response_model=schemas.InstrumentoOut)
 async def autodescubrir(isin: str, db: Session = Depends(get_db)):
-    """Busca o crea un instrumento por ISIN usando IA + FMP."""
+    """Busca o crea un instrumento por ISIN usando Gemini para metadatos."""
     isin = isin.strip().upper()
     instrumento = db.query(models.Instrumento).filter(models.Instrumento.isin == isin).first()
     if instrumento:
         return instrumento
 
-    datos_ia = await precios.autodescubrir_instrumento(isin)
-    ticker = await precios.buscar_ticker_por_isin(isin)
+    datos = await precios.enriquecer_por_isin(isin)
+    if not datos:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se pudieron obtener datos para el ISIN {isin}. Comprueba que el ISIN es correcto."
+        )
 
     instrumento = models.Instrumento(
         isin=isin,
-        ticker=ticker,
-        nombre=datos_ia.get("nombre"),
-        tipo=datos_ia.get("tipo"),
-        sector=datos_ia.get("sector"),
-        pais=datos_ia.get("pais"),
-        moneda=datos_ia.get("moneda"),
-        exchange=datos_ia.get("exchange"),
+        ticker=datos.get("ticker"),
+        nombre=datos.get("nombre"),
+        tipo=datos.get("tipo"),
+        sector=datos.get("sector"),
+        pais=datos.get("pais"),
+        moneda=datos.get("moneda"),
+        exchange=datos.get("exchange"),
     )
     db.add(instrumento)
     db.commit()
     db.refresh(instrumento)
     return instrumento
+
+
+@router.delete("/instrumentos")
+def eliminar_todos_instrumentos(db: Session = Depends(get_db)):
+    db.query(models.Instrumento).delete()
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/instrumentos/{instrumento_id}")
+def eliminar_instrumento(instrumento_id: int, db: Session = Depends(get_db)):
+    instrumento = db.query(models.Instrumento).filter(models.Instrumento.id == instrumento_id).first()
+    if not instrumento:
+        raise HTTPException(status_code=404, detail="Instrumento no encontrado")
+    db.delete(instrumento)
+    db.commit()
+    return {"ok": True}
 
 
 @router.patch("/instrumentos/{instrumento_id}", response_model=schemas.InstrumentoOut)
@@ -99,17 +120,22 @@ async def crear_movimiento(data: schemas.MovimientoCreate, db: Session = Depends
     isin_normalizado = data.isin.strip().upper()
     instrumento = db.query(models.Instrumento).filter(models.Instrumento.isin == isin_normalizado).first()
     if not instrumento:
-        datos_ia = await precios.autodescubrir_instrumento(isin_normalizado)
-        ticker = await precios.buscar_ticker_por_isin(isin_normalizado)
+        datos = await precios.enriquecer_por_isin(isin_normalizado)
+        if not datos:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No se pudieron obtener datos para el ISIN {isin_normalizado}. Comprueba que el ISIN es correcto."
+            )
+
         instrumento = models.Instrumento(
             isin=isin_normalizado,
-            ticker=ticker,
-            nombre=datos_ia.get("nombre"),
-            tipo=datos_ia.get("tipo"),
-            sector=datos_ia.get("sector"),
-            pais=datos_ia.get("pais"),
-            moneda=datos_ia.get("moneda"),
-            exchange=datos_ia.get("exchange"),
+            ticker=datos.get("ticker"),
+            nombre=datos.get("nombre"),
+            tipo=datos.get("tipo"),
+            sector=datos.get("sector"),
+            pais=datos.get("pais"),
+            moneda=datos.get("moneda"),
+            exchange=datos.get("exchange"),
         )
         db.add(instrumento)
         db.flush()  # obtenemos instrumento.id sin hacer commit aun

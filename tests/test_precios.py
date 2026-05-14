@@ -4,14 +4,12 @@ Tests unitarios para app/services/precios.py
 Todas las llamadas HTTP se mockean con unittest.mock.
 """
 import pytest
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.precios import (
     obtener_precio_actual,
     obtener_precios_batch,
     buscar_ticker_por_isin,
-    autodescubrir_instrumento,
 )
 
 
@@ -40,12 +38,6 @@ class TestKeys:
         with pytest.raises(ValueError, match="FMP_API_KEY"):
             precios._fmp_key()
 
-    def test_anthropic_key_falla_sin_env(self, monkeypatch):
-        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-        from app.services import precios
-        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-            precios._anthropic_key()
-
     def test_fmp_key_ok(self, monkeypatch):
         monkeypatch.setenv("FMP_API_KEY", "test-key")
         from app.services import precios
@@ -53,6 +45,7 @@ class TestKeys:
 
 
 # ── obtener_precio_actual ─────────────────────────────────────────────────────
+
 
 class TestObtenerPrecioActual:
 
@@ -152,24 +145,25 @@ class TestBuscarTickerPorIsin:
 
     @pytest.mark.asyncio
     async def test_devuelve_ticker(self, monkeypatch):
-        monkeypatch.setenv("FMP_API_KEY", "key")
-        data = [{"symbol": "AAPL", "name": "Apple Inc."}]
+        # OpenFIGI devuelve lista con data: [{ticker, exchCode, ...}]
+        data = [{"data": [{"ticker": "SAN", "exchCode": "SM"}]}]
         resp = mock_response(data)
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(
-                get=AsyncMock(return_value=resp)
+                post=AsyncMock(return_value=resp)
             ))
             mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            ticker = await buscar_ticker_por_isin("US0378331005")
-        assert ticker == "AAPL"
+            ticker = await buscar_ticker_por_isin("ES0113900J37")
+        assert ticker == "SAN.MC"
 
     @pytest.mark.asyncio
     async def test_sin_resultados_devuelve_none(self, monkeypatch):
-        monkeypatch.setenv("FMP_API_KEY", "key")
-        resp = mock_response([])
+        # OpenFIGI responde pero sin data en el resultado
+        data = [{}]
+        resp = mock_response(data)
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(
-                get=AsyncMock(return_value=resp)
+                post=AsyncMock(return_value=resp)
             ))
             mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
             ticker = await buscar_ticker_por_isin("XX0000000000")
@@ -177,7 +171,6 @@ class TestBuscarTickerPorIsin:
 
     @pytest.mark.asyncio
     async def test_error_devuelve_none(self, monkeypatch):
-        monkeypatch.setenv("FMP_API_KEY", "key")
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__ = AsyncMock(side_effect=Exception("network"))
             mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -185,70 +178,4 @@ class TestBuscarTickerPorIsin:
         assert ticker is None
 
 
-# ── autodescubrir_instrumento ─────────────────────────────────────────────────
 
-class TestAutodescubrir:
-
-    _RESP_VALIDA = {
-        "nombre": "Apple Inc.",
-        "tipo": "accion",
-        "sector": "Tecnología",
-        "pais": "Estados Unidos",
-        "moneda": "USD",
-        "exchange": "NASDAQ",
-    }
-
-    def _mock_anthropic(self, payload):
-        return mock_response({
-            "content": [{"text": json.dumps(payload)}]
-        })
-
-    @pytest.mark.asyncio
-    async def test_parseo_correcto(self, monkeypatch):
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
-        resp = self._mock_anthropic(self._RESP_VALIDA)
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(
-                post=AsyncMock(return_value=resp)
-            ))
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            result = await autodescubrir_instrumento("US0378331005")
-        assert result["nombre"] == "Apple Inc."
-        assert result["sector"] == "Tecnología"
-
-    @pytest.mark.asyncio
-    async def test_respuesta_con_markdown_se_limpia(self, monkeypatch):
-        """Claude a veces devuelve el JSON envuelto en ```json ... ```."""
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
-        raw = f"```json\n{json.dumps(self._RESP_VALIDA)}\n```"
-        resp = mock_response({"content": [{"text": raw}]})
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(
-                post=AsyncMock(return_value=resp)
-            ))
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            result = await autodescubrir_instrumento("US0378331005")
-        assert result["nombre"] == "Apple Inc."
-
-    @pytest.mark.asyncio
-    async def test_error_devuelve_dict_vacio(self, monkeypatch):
-        """Si la IA falla, el flujo no debe romperse."""
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(side_effect=Exception("timeout"))
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            result = await autodescubrir_instrumento("US0378331005")
-        assert result == {}
-
-    @pytest.mark.asyncio
-    async def test_json_malformado_devuelve_dict_vacio(self, monkeypatch):
-        """Si Claude responde texto que no es JSON, no debe explotar."""
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
-        resp = mock_response({"content": [{"text": "lo siento, no sé"}]})
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(
-                post=AsyncMock(return_value=resp)
-            ))
-            mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
-            result = await autodescubrir_instrumento("US0378331005")
-        assert result == {}

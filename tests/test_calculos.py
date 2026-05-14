@@ -215,9 +215,10 @@ class TestCalcularResumen:
         assert r["num_posiciones"] == 2
 
     def test_resumen_sin_precios(self):
-        posiciones = [self._pos(valor_actual=None, plusvalia_latente=None)]
+        """Sin precio actual, valor_total usa coste_total como fallback."""
+        posiciones = [self._pos(valor_actual=None, coste_total=1000.0, plusvalia_latente=None)]
         r = calcular_resumen_cartera(posiciones)
-        assert r["valor_total"] == 0.0
+        assert r["valor_total"] == 1000.0   # fallback a coste_total
         assert r["plusvalia_latente"] == 0.0
 
     def test_resumen_vacio(self):

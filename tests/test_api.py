@@ -66,11 +66,11 @@ MOCK_IA = {
 
 
 def mock_precios():
-    """Contexto que parchea las llamadas externas de precios/IA."""
+    """Contexto que parchea las llamadas externas de precios/FMP."""
     return patch.multiple(
         "app.routers.api.precios",
-        autodescubrir_instrumento=AsyncMock(return_value=MOCK_IA),
         buscar_ticker_por_isin=AsyncMock(return_value="AAPL"),
+        obtener_perfil_por_ticker=AsyncMock(return_value=MOCK_IA),
         obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
     )
 
