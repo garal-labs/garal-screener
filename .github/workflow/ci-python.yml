@@ -1,0 +1,309 @@
+name: CI — Quality & Security
+
+# Solo se ejecuta cuando abres o actualizas un PR hacia main o develop.
+# Los commits intermedios en tu rama de trabajo NO activan el CI.
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 1 — TESTS UNITARIOS Y COBERTURA
+  #
+  # Es el job más importante. Hace tres cosas en orden:
+  #
+  # 1) Verifica que existan archivos de test (test_*.py o *_test.py).
+  #    Si no hay ninguno, el job falla con un mensaje claro antes de
+  #    ejecutar nada. Esta es la "validación dura" mínima obligatoria.
+  #
+  # 2) Ejecuta todos los tests con pytest y mide qué porcentaje del código
+  #    se ejecuta durante ellos (coverage). Si el coverage baja del 70%,
+  #    el job falla. Ese umbral es ajustable en --cov-fail-under.
+  #
+  # 3) Los tests corren sobre TODO el código, no solo los archivos
+  #    modificados. Esto es correcto: un cambio en auth.py puede romper
+  #    algo en models.py que no tocaste.
+  #
+  # El reporte de cobertura se muestra en los logs del CI desglosado
+  # por archivo, indicando qué líneas no están cubiertas. Ejemplo:
+  #
+  #   Name              Stmts   Miss  Cover   Missing
+  #   src/auth.py          45      8    82%   23-31, 67
+  #   src/models.py        30      0   100%
+  #
+  # El job corre DOS VECES en paralelo (Python 3.11 y 3.12) para detectar
+  # incompatibilidades entre versiones. Si solo usas una versión, puedes
+  # eliminar la matrix y dejar solo python-version: ["3.12"].
+  #
+  # Archivos que necesita tu repo:
+  #   - requirements.txt       (dependencias de producción)
+  #   - requirements-dev.txt   (pytest, pytest-cov, etc.)
+  #   - Al menos un test_*.py  (en cualquier carpeta)
+  # ══════════════════════════════════════════════════════════════════════════
+  tests:
+    name: Unit tests & coverage
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Check that tests exist
+        run: |
+          TEST_COUNT=$(find . -name "test_*.py" -o -name "*_test.py" | wc -l)
+          if [ "$TEST_COUNT" -eq 0 ]; then
+            echo "❌ No se encontraron tests unitarios. Este proyecto los requiere."
+            exit 1
+          fi
+          echo "✅ Tests encontrados: $TEST_COUNT archivos"
+
+      - name: Run tests with coverage
+        run: |
+          pytest \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-fail-under=70 \
+            -v
+
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 2 — LINTING Y FORMATO
+  #
+  # Valida que el código siga estándares de estilo. NO modifica nada,
+  # solo reporta. Si algo no cumple el estándar, el job falla y ves
+  # exactamente qué línea y por qué.
+  #
+  # Tres herramientas con responsabilidades distintas:
+  #
+  # RUFF — el linter principal. Busca errores reales y de estilo:
+  #   - Variables definidas pero nunca usadas
+  #   - Imports que no existen o no se usan
+  #   - Comparaciones que siempre son verdaderas o falsas
+  #   - Patrones de código peligrosos o poco claros
+  #   Es el sustituto moderno de flake8 + pylint, mucho más rápido.
+  #
+  # BLACK — el formateador. No opina sobre lógica, solo sobre formato:
+  #   indentación, longitud de líneas, comillas, espacios. El flag
+  #   --check no modifica nada, solo falla si el código no está
+  #   formateado como Black esperaría. La idea es que todos usen Black
+  #   localmente (via IDE o `black .`) y nunca haya discusiones de
+  #   estilo en PRs.
+  #
+  # ISORT — ordena los imports por convención:
+  #   1º librería estándar de Python (os, sys, json...)
+  #   2º librerías externas (requests, fastapi, django...)
+  #   3º imports de tu propio código
+  #   También solo chequea, no modifica.
+  #
+  # Este job está separado de tests porque son fallos de naturaleza
+  # diferente. Un error de lint no significa que el código esté roto,
+  # pero sí que está fuera de estándar.
+  # ══════════════════════════════════════════════════════════════════════════
+  lint:
+    name: Lint & format check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install linting tools
+        run: pip install ruff black isort
+
+      - name: Ruff (linter + unused imports + complejidad)
+        run: ruff check . --output-format=github
+
+      - name: Black (formato)
+        run: black --check --diff .
+
+      - name: isort (orden de imports)
+        run: isort --check-only --diff .
+
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 3 — TYPE CHECKING
+  #
+  # Valida que los tipos declarados en el código sean consistentes.
+  # Solo es útil si usas type hints en Python, es decir:
+  #
+  #   def suma(a: int, b: int) -> int:
+  #       return a + b
+  #
+  # mypy lee esas anotaciones y verifica que en ningún lugar estés
+  # pasando un string donde esperabas un int, o devolviendo None donde
+  # prometiste devolver un dict. Atrapa una categoría entera de bugs
+  # antes de ejecutar nada.
+  #
+  # Si tu proyecto no usa type hints todavía, este job pasará vacío
+  # sin hacer nada útil. Puedes desactivarlo comentando el job entero
+  # y reactivarlo cuando empieces a adoptar tipos.
+  # ══════════════════════════════════════════════════════════════════════════
+  types:
+    name: Type check (mypy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies + mypy
+        run: |
+          pip install -r requirements.txt
+          pip install mypy
+
+      - name: Run mypy
+        run: mypy . --ignore-missing-imports --no-error-summary
+
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 4 — SEGURIDAD
+  #
+  # Busca dos tipos de problemas con dos herramientas distintas:
+  #
+  # BANDIT — analiza tu propio código fuente buscando patrones peligrosos:
+  #   - Uso de eval() o exec()
+  #   - Conexiones SSL sin verificar certificados
+  #   - MD5 o SHA1 para hashing de contraseñas (inseguros)
+  #   - Queries SQL construidas con concatenación (SQL injection)
+  #   - Números aleatorios no criptográficos donde se necesita seguridad
+  #   No ejecuta el código, lo lee como texto y compara contra reglas.
+  #   El flag --severity-level medium ignora problemas leves y solo
+  #   falla en severidad media o alta.
+  #
+  # PIP-AUDIT — no mira tu código sino tus dependencias.
+  #   Consulta la base de datos pública de vulnerabilidades (PyPA) y
+  #   comprueba si alguna librería en requirements.txt tiene CVEs
+  #   conocidos. Por ejemplo: si usas una versión vieja de `requests`
+  #   con una vulnerabilidad, pip-audit te dice qué versión tienes,
+  #   qué CVE tiene y a qué versión debes actualizar.
+  #
+  # Los reportes en JSON se guardan como artefactos descargables en
+  # GitHub Actions — si el job falla puedes descargar el JSON para
+  # ver el detalle completo.
+  # ══════════════════════════════════════════════════════════════════════════
+  security:
+    name: Security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install security tools
+        run: pip install bandit safety pip-audit
+
+      - name: Bandit (code vulnerabilities)
+        run: |
+          bandit -r . \
+            -x ./tests,./venv,./.venv \
+            --severity-level medium \
+            -f json -o bandit-report.json || true
+          bandit -r . \
+            -x ./tests,./venv,./.venv \
+            --severity-level medium
+
+      - name: pip-audit (dependency CVEs)
+        run: pip-audit -r requirements.txt --format=json --output=pip-audit.json || pip-audit -r requirements.txt
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            pip-audit.json
+
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 5 — DETECCIÓN DE SECRETOS FILTRADOS
+  #
+  # Busca credenciales, API keys, tokens o contraseñas que hayan sido
+  # commiteadas accidentalmente. Especialmente crítico en repos públicos
+  # porque una API key expuesta puede ser detectada por bots en minutos.
+  #
+  # TruffleHog con --only-verified no solo busca patrones genéricos
+  # ("esta cadena parece una clave"). Va un paso más lejos: toma las
+  # posibles claves que encuentra e intenta autenticarse contra los
+  # servicios reales (AWS, GitHub, Stripe, Slack...) para confirmar
+  # si son credenciales válidas y activas. Solo falla si encuentra
+  # algo que realmente funciona, lo que reduce los falsos positivos.
+  #
+  # Analiza TODO el historial de commits, no solo el último. Esto es
+  # importante porque si alguien commitea una clave y luego hace otro
+  # commit borrándola, la clave sigue en el historial de git y sigue
+  # siendo un riesgo real. Por eso fetch-depth: 0 (historial completo).
+  # ══════════════════════════════════════════════════════════════════════════
+  secrets:
+    name: Secrets leak detection
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: TruffleHog (secret scanning)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --only-verified
+
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 6 — REVISIÓN DE DEPENDENCIAS NUEVAS (solo en PRs)
+  #
+  # Complementa a pip-audit (job 4) pero con un enfoque diferente:
+  #
+  #   pip-audit   → analiza TODAS las dependencias ya instaladas
+  #   este job    → analiza SOLO las dependencias que este PR añade
+  #                 o actualiza respecto a la rama base
+  #
+  # Si estás añadiendo una librería nueva que ya tiene un CVE de
+  # severidad alta, este job falla antes de que el PR se mergee,
+  # justo en el momento en que estás tomando la decisión.
+  #
+  # Para proyectos pequeños o en solitario puedes eliminarlo y quedarte
+  # solo con pip-audit — es perfectamente razonable.
+  # ══════════════════════════════════════════════════════════════════════════
+  deps:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
