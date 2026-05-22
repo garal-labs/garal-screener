@@ -1,16 +1,15 @@
-from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
-from alembic import context
 import os
 import sys
+from logging.config import fileConfig
+from dotenv import load_dotenv
+from app.models import Base
+from sqlalchemy import engine_from_config, pool
+from alembic import context
 
 # Asegura que el root del proyecto esté en el path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dotenv import load_dotenv
 load_dotenv()
-
-from app.models import Base
 
 config = context.config
 

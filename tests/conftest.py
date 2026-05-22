@@ -2,14 +2,16 @@
 Fixtures compartidos para los tests de integración.
 Usa SQLite en memoria para aislar completamente cada test.
 """
-import pytest
+
 from unittest.mock import patch
+
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Base
 from app.database import get_db
+from app.models import Base
 from main import app
 
 # SQLite en memoria con URI compartida para que todas las conexiones
@@ -46,6 +48,7 @@ def client(setup_db):
     """TestClient con la DB en memoria inyectada vía override.
     init_db se parchea para que el lifespan no recree tablas en el engine de producción.
     """
+
     def override_get_db():
         db = TestingSessionLocal()
         try:

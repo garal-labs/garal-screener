@@ -3,20 +3,22 @@ Tests unitarios para app/services/calculos.py
 
 Se usan SimpleNamespace para simular objetos ORM sin necesidad de DB.
 """
-import pytest
-from types import SimpleNamespace
+
 from datetime import date
+from types import SimpleNamespace
+
+import pytest
 
 from app.services.calculos import (
     VentaInvalidaError,
-    calcular_posicion_fifo,
-    calcular_plusvalia_latente,
-    calcular_resumen_cartera,
     agrupar_por_campo,
+    calcular_plusvalia_latente,
+    calcular_posicion_fifo,
+    calcular_resumen_cartera,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def compra(id, fecha, cantidad, precio, comision=0.0, tipo_cambio=None):
     return SimpleNamespace(
@@ -49,8 +51,8 @@ D3 = date(2024, 3, 1)
 
 # ── calcular_posicion_fifo ────────────────────────────────────────────────────
 
-class TestCalcularPosicionFifo:
 
+class TestCalcularPosicionFifo:
     def test_compra_unica(self):
         movs = [compra(1, D1, 10, 100.0)]
         r = calcular_posicion_fifo(movs)
@@ -72,8 +74,8 @@ class TestCalcularPosicionFifo:
     def test_venta_parcial_fifo(self):
         movs = [
             compra(1, D1, 10, 100.0),  # lote a 100
-            compra(2, D2, 5, 200.0),   # lote a 200
-            venta(3, D3, 6, 150.0),    # vende 6 del primer lote (FIFO)
+            compra(2, D2, 5, 200.0),  # lote a 200
+            venta(3, D3, 6, 150.0),  # vende 6 del primer lote (FIFO)
         ]
         r = calcular_posicion_fifo(movs)
         # Quedan 4 del lote a 100 + 5 a 200
@@ -105,7 +107,7 @@ class TestCalcularPosicionFifo:
         movs = [
             compra(2, D1, 5, 200.0),  # id mayor, precio mayor
             compra(1, D1, 5, 100.0),  # id menor, precio menor
-            venta(3, D2, 5, 150.0),   # debe consumir el id=1 (100€) primero
+            venta(3, D2, 5, 150.0),  # debe consumir el id=1 (100€) primero
         ]
         r = calcular_posicion_fifo(movs)
         # P/L = 5*(150-100) = 250
@@ -150,8 +152,8 @@ class TestCalcularPosicionFifo:
 
 # ── calcular_plusvalia_latente ────────────────────────────────────────────────
 
-class TestCalcularPlusvalia:
 
+class TestCalcularPlusvalia:
     def _posicion(self, cantidad=10, coste=1000.0, plusvalia_realizada=0.0):
         return {
             "cantidad_actual": cantidad,
@@ -187,10 +189,16 @@ class TestCalcularPlusvalia:
 
 # ── calcular_resumen_cartera ──────────────────────────────────────────────────
 
-class TestCalcularResumen:
 
-    def _pos(self, valor_actual=None, coste_total=1000.0,
-             plusvalia_latente=None, plusvalia_realizada=0.0, cantidad_actual=10):
+class TestCalcularResumen:
+    def _pos(
+        self,
+        valor_actual=None,
+        coste_total=1000.0,
+        plusvalia_latente=None,
+        plusvalia_realizada=0.0,
+        cantidad_actual=10,
+    ):
         return {
             "valor_actual": valor_actual,
             "coste_total": coste_total,
@@ -201,10 +209,18 @@ class TestCalcularResumen:
 
     def test_resumen_con_precios(self):
         posiciones = [
-            self._pos(valor_actual=1200.0, coste_total=1000.0,
-                      plusvalia_latente=200.0, plusvalia_realizada=50.0),
-            self._pos(valor_actual=800.0, coste_total=1000.0,
-                      plusvalia_latente=-200.0, plusvalia_realizada=0.0),
+            self._pos(
+                valor_actual=1200.0,
+                coste_total=1000.0,
+                plusvalia_latente=200.0,
+                plusvalia_realizada=50.0,
+            ),
+            self._pos(
+                valor_actual=800.0,
+                coste_total=1000.0,
+                plusvalia_latente=-200.0,
+                plusvalia_realizada=0.0,
+            ),
         ]
         r = calcular_resumen_cartera(posiciones)
         assert r["valor_total"] == 2000.0
@@ -218,7 +234,7 @@ class TestCalcularResumen:
         """Sin precio actual, valor_total usa coste_total como fallback."""
         posiciones = [self._pos(valor_actual=None, coste_total=1000.0, plusvalia_latente=None)]
         r = calcular_resumen_cartera(posiciones)
-        assert r["valor_total"] == 1000.0   # fallback a coste_total
+        assert r["valor_total"] == 1000.0  # fallback a coste_total
         assert r["plusvalia_latente"] == 0.0
 
     def test_resumen_vacio(self):
@@ -233,8 +249,8 @@ class TestCalcularResumen:
             self._pos(
                 valor_actual=1000.0,
                 coste_total=1000.0,
-                plusvalia_latente=0.0,    # sin ganancia latente
-                plusvalia_realizada=100.0  # pero sí realizada
+                plusvalia_latente=0.0,  # sin ganancia latente
+                plusvalia_realizada=100.0,  # pero sí realizada
             )
         ]
         r = calcular_resumen_cartera(posiciones)
@@ -244,8 +260,8 @@ class TestCalcularResumen:
 
 # ── agrupar_por_campo ─────────────────────────────────────────────────────────
 
-class TestAgruparPorCampo:
 
+class TestAgruparPorCampo:
     def test_agrupacion_basica(self):
         posiciones = [
             {"sector": "Tecnología", "valor_actual": 1000.0, "coste_total": 800.0},

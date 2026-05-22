@@ -3,15 +3,17 @@ Tests de integración para los endpoints de la API.
 Todos los tests usan SQLite en memoria (ver conftest.py).
 Las llamadas externas (FMP, Anthropic) se mockean.
 """
-import pytest
+
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 BASE = "/api/v1"
 
 # ── Carteras ──────────────────────────────────────────────────────────────────
 
-class TestCarteras:
 
+class TestCarteras:
     def test_crear_cartera(self, client):
         r = client.post(f"{BASE}/carteras", json={"nombre": "Mi cartera"})
         assert r.status_code == 200
@@ -20,10 +22,10 @@ class TestCarteras:
         assert "id" in data
 
     def test_crear_cartera_con_descripcion(self, client):
-        r = client.post(f"{BASE}/carteras", json={
-            "nombre": "Cartera 2",
-            "descripcion": "Inversiones largo plazo"
-        })
+        r = client.post(
+            f"{BASE}/carteras",
+            json={"nombre": "Cartera 2", "descripcion": "Inversiones largo plazo"},
+        )
         assert r.status_code == 200
         assert r.json()["descripcion"] == "Inversiones largo plazo"
 
@@ -76,22 +78,24 @@ def mock_precios():
 
 
 class TestMovimientos:
-
     def _cartera_id(self, client):
         return client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
 
     def test_crear_movimiento_compra(self, client):
         cartera_id = self._cartera_id(client)
         with mock_precios():
-            r = client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 10,
-                "precio": 180.0,
-                "comision": 5.0,
-            })
+            r = client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 180.0,
+                    "comision": 5.0,
+                },
+            )
         assert r.status_code == 200
         data = r.json()
         assert data["tipo"] == "compra"
@@ -100,84 +104,105 @@ class TestMovimientos:
     def test_isin_se_normaliza_a_mayusculas(self, client):
         cartera_id = self._cartera_id(client)
         with mock_precios():
-            r = client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "us0378331005",  # en minúsculas
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 5,
-                "precio": 180.0,
-            })
+            r = client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "us0378331005",  # en minúsculas
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 5,
+                    "precio": 180.0,
+                },
+            )
         assert r.status_code == 200
         assert r.json()["instrumento"]["isin"] == "US0378331005"
 
     def test_crear_movimiento_cartera_inexistente(self, client):
         with mock_precios():
-            r = client.post(f"{BASE}/movimientos", json={
-                "cartera_id": 9999,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 10,
-                "precio": 180.0,
-            })
+            r = client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": 9999,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 180.0,
+                },
+            )
         assert r.status_code == 404
 
     def test_venta_valida(self, client):
         cartera_id = self._cartera_id(client)
         with mock_precios():
             # Compra primero
-            client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 10,
-                "precio": 180.0,
-            })
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 180.0,
+                },
+            )
             # Luego vende parte
-            r = client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "venta",
-                "fecha": "2024-06-01",
-                "cantidad": 5,
-                "precio": 200.0,
-            })
+            r = client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "venta",
+                    "fecha": "2024-06-01",
+                    "cantidad": 5,
+                    "precio": 200.0,
+                },
+            )
         assert r.status_code == 200
 
     def test_venta_supera_stock_retorna_400(self, client):
         cartera_id = self._cartera_id(client)
         with mock_precios():
-            client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 5,
-                "precio": 180.0,
-            })
-            r = client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "venta",
-                "fecha": "2024-06-01",
-                "cantidad": 10,  # más de lo comprado
-                "precio": 200.0,
-            })
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 5,
+                    "precio": 180.0,
+                },
+            )
+            r = client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "venta",
+                    "fecha": "2024-06-01",
+                    "cantidad": 10,  # más de lo comprado
+                    "precio": 200.0,
+                },
+            )
         assert r.status_code == 400
 
     def test_listar_movimientos(self, client):
         cartera_id = self._cartera_id(client)
         with mock_precios():
-            client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 10,
-                "precio": 180.0,
-            })
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 180.0,
+                },
+            )
         r = client.get(f"{BASE}/carteras/{cartera_id}/movimientos")
         assert r.status_code == 200
         assert len(r.json()) == 1
@@ -189,14 +214,17 @@ class TestMovimientos:
     def test_eliminar_movimiento(self, client):
         cartera_id = self._cartera_id(client)
         with mock_precios():
-            mov_id = client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 10,
-                "precio": 180.0,
-            }).json()["id"]
+            mov_id = client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 180.0,
+                },
+            ).json()["id"]
         r = client.delete(f"{BASE}/movimientos/{mov_id}")
         assert r.status_code == 200
 
@@ -206,45 +234,54 @@ class TestMovimientos:
 
     def test_tipo_movimiento_invalido_retorna_422(self, client):
         cartera_id = self._cartera_id(client)
-        r = client.post(f"{BASE}/movimientos", json={
-            "cartera_id": cartera_id,
-            "isin": "US0378331005",
-            "tipo": "transferencia",  # inválido
-            "fecha": "2024-01-15",
-            "cantidad": 10,
-            "precio": 180.0,
-        })
+        r = client.post(
+            f"{BASE}/movimientos",
+            json={
+                "cartera_id": cartera_id,
+                "isin": "US0378331005",
+                "tipo": "transferencia",  # inválido
+                "fecha": "2024-01-15",
+                "cantidad": 10,
+                "precio": 180.0,
+            },
+        )
         assert r.status_code == 422
 
     def test_comision_negativa_retorna_422(self, client):
         cartera_id = self._cartera_id(client)
-        r = client.post(f"{BASE}/movimientos", json={
-            "cartera_id": cartera_id,
-            "isin": "US0378331005",
-            "tipo": "compra",
-            "fecha": "2024-01-15",
-            "cantidad": 10,
-            "precio": 180.0,
-            "comision": -5.0,  # inválida
-        })
-        assert r.status_code == 422
-
-
-# ── Resumen de cartera ────────────────────────────────────────────────────────
-
-class TestResumenCartera:
-
-    def _setup_cartera_con_compra(self, client):
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
-        with mock_precios():
-            client.post(f"{BASE}/movimientos", json={
+        r = client.post(
+            f"{BASE}/movimientos",
+            json={
                 "cartera_id": cartera_id,
                 "isin": "US0378331005",
                 "tipo": "compra",
                 "fecha": "2024-01-15",
                 "cantidad": 10,
-                "precio": 100.0,
-            })
+                "precio": 180.0,
+                "comision": -5.0,  # inválida
+            },
+        )
+        assert r.status_code == 422
+
+
+# ── Resumen de cartera ────────────────────────────────────────────────────────
+
+
+class TestResumenCartera:
+    def _setup_cartera_con_compra(self, client):
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
+        with mock_precios():
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 100.0,
+                },
+            )
         return cartera_id
 
     def test_resumen_con_precio(self, client):
@@ -267,22 +304,28 @@ class TestResumenCartera:
         cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
         with mock_precios():
             # Compra y venta total → posición cerrada
-            client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-01",
-                "cantidad": 10,
-                "precio": 100.0,
-            })
-            client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "venta",
-                "fecha": "2024-06-01",
-                "cantidad": 10,
-                "precio": 120.0,
-            })
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-01",
+                    "cantidad": 10,
+                    "precio": 100.0,
+                },
+            )
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "venta",
+                    "fecha": "2024-06-01",
+                    "cantidad": 10,
+                    "precio": 120.0,
+                },
+            )
             r = client.get(f"{BASE}/carteras/{cartera_id}/resumen")
         assert r.status_code == 200
         data = r.json()
@@ -294,24 +337,30 @@ class TestResumenCartera:
 
 # ── Instrumentos ──────────────────────────────────────────────────────────────
 
-class TestInstrumentos:
 
+class TestInstrumentos:
     def test_patch_instrumento(self, client):
         cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
         with mock_precios():
-            mov = client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 5,
-                "precio": 180.0,
-            }).json()
+            mov = client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 5,
+                    "precio": 180.0,
+                },
+            ).json()
         instrumento_id = mov["instrumento"]["id"]
-        r = client.patch(f"{BASE}/instrumentos/{instrumento_id}", json={
-            "sector": "Consumo Básico",
-            "pais": "Canadá",
-        })
+        r = client.patch(
+            f"{BASE}/instrumentos/{instrumento_id}",
+            json={
+                "sector": "Consumo Básico",
+                "pais": "Canadá",
+            },
+        )
         assert r.status_code == 200
         data = r.json()
         assert data["sector"] == "Consumo Básico"
@@ -324,20 +373,24 @@ class TestInstrumentos:
     def test_listar_instrumentos(self, client):
         cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
         with mock_precios():
-            client.post(f"{BASE}/movimientos", json={
-                "cartera_id": cartera_id,
-                "isin": "US0378331005",
-                "tipo": "compra",
-                "fecha": "2024-01-15",
-                "cantidad": 5,
-                "precio": 180.0,
-            })
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 5,
+                    "precio": 180.0,
+                },
+            )
         r = client.get(f"{BASE}/instrumentos")
         assert r.status_code == 200
         assert len(r.json()) == 1
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
+
 
 def test_health(client):
     r = client.get("/health")

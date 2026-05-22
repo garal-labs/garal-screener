@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
-from app.database import get_db
 from app import models, schemas
+from app.database import get_db
 from app.services import calculos, precios
 
 router = APIRouter()
 
 
 # -- Carteras -----------------------------------------------------------------
+
 
 @router.post("/carteras", response_model=schemas.CarteraOut)
 def crear_cartera(data: schemas.CarteraCreate, db: Session = Depends(get_db)):
@@ -20,7 +20,7 @@ def crear_cartera(data: schemas.CarteraCreate, db: Session = Depends(get_db)):
     return cartera
 
 
-@router.get("/carteras", response_model=List[schemas.CarteraOut])
+@router.get("/carteras", response_model=list[schemas.CarteraOut])
 def listar_carteras(db: Session = Depends(get_db)):
     return db.query(models.Cartera).all()
 
@@ -38,6 +38,7 @@ def eliminar_cartera(cartera_id: int, db: Session = Depends(get_db)):
 
 # -- Instrumentos -------------------------------------------------------------
 
+
 @router.get("/instrumentos/autodescubrir/{isin}", response_model=schemas.InstrumentoOut)
 async def autodescubrir(isin: str, db: Session = Depends(get_db)):
     """Busca o crea un instrumento por ISIN usando Gemini para metadatos."""
@@ -50,7 +51,7 @@ async def autodescubrir(isin: str, db: Session = Depends(get_db)):
     if not datos:
         raise HTTPException(
             status_code=404,
-            detail=f"No se pudieron obtener datos para el ISIN {isin}. Comprueba que el ISIN es correcto."
+            detail=f"No se pudieron obtener datos para el ISIN {isin}. Comprueba que el ISIN es correcto.",
         )
 
     instrumento = models.Instrumento(
@@ -89,8 +90,8 @@ def eliminar_instrumento(instrumento_id: int, db: Session = Depends(get_db)):
 @router.patch("/instrumentos/{instrumento_id}", response_model=schemas.InstrumentoOut)
 def actualizar_instrumento(
     instrumento_id: int,
-    data: schemas.InstrumentoUpdate,   # schema Pydantic correcto, no dict
-    db: Session = Depends(get_db)
+    data: schemas.InstrumentoUpdate,  # schema Pydantic correcto, no dict
+    db: Session = Depends(get_db),
 ):
     """Permite corregir manualmente cualquier campo del instrumento."""
     instrumento = db.query(models.Instrumento).filter(models.Instrumento.id == instrumento_id).first()
@@ -103,12 +104,13 @@ def actualizar_instrumento(
     return instrumento
 
 
-@router.get("/instrumentos", response_model=List[schemas.InstrumentoOut])
+@router.get("/instrumentos", response_model=list[schemas.InstrumentoOut])
 def listar_instrumentos(db: Session = Depends(get_db)):
     return db.query(models.Instrumento).all()
 
 
 # -- Movimientos --------------------------------------------------------------
+
 
 @router.post("/movimientos", response_model=schemas.MovimientoOut)
 async def crear_movimiento(data: schemas.MovimientoCreate, db: Session = Depends(get_db)):
@@ -124,7 +126,7 @@ async def crear_movimiento(data: schemas.MovimientoCreate, db: Session = Depends
         if not datos:
             raise HTTPException(
                 status_code=404,
-                detail=f"No se pudieron obtener datos para el ISIN {isin_normalizado}. Comprueba que el ISIN es correcto."
+                detail=f"No se pudieron obtener datos para el ISIN {isin_normalizado}. Comprueba que el ISIN es correcto.",
             )
 
         instrumento = models.Instrumento(
@@ -142,15 +144,19 @@ async def crear_movimiento(data: schemas.MovimientoCreate, db: Session = Depends
 
     # Validar venta: no puedes vender mas de lo que tienes
     if data.tipo == "venta":
-        movs = db.query(models.Movimiento).filter(
-            models.Movimiento.instrumento_id == instrumento.id,
-            models.Movimiento.cartera_id == data.cartera_id,
-        ).all()
+        movs = (
+            db.query(models.Movimiento)
+            .filter(
+                models.Movimiento.instrumento_id == instrumento.id,
+                models.Movimiento.cartera_id == data.cartera_id,
+            )
+            .all()
+        )
         posicion = calculos.calcular_posicion_fifo(movs)
         if data.cantidad > posicion["cantidad_actual"]:
             raise HTTPException(
                 status_code=400,
-                detail=f"No puedes vender {data.cantidad} unidades. Tienes {posicion['cantidad_actual']}"
+                detail=f"No puedes vender {data.cantidad} unidades. Tienes {posicion['cantidad_actual']}",
             )
 
     movimiento = models.Movimiento(
@@ -170,7 +176,7 @@ async def crear_movimiento(data: schemas.MovimientoCreate, db: Session = Depends
     return movimiento
 
 
-@router.get("/carteras/{cartera_id}/movimientos", response_model=List[schemas.MovimientoOut])
+@router.get("/carteras/{cartera_id}/movimientos", response_model=list[schemas.MovimientoOut])
 def listar_movimientos(cartera_id: int, db: Session = Depends(get_db)):
     cartera = db.query(models.Cartera).filter(models.Cartera.id == cartera_id).first()
     if not cartera:
@@ -195,6 +201,7 @@ def eliminar_movimiento(movimiento_id: int, db: Session = Depends(get_db)):
 
 # -- Posiciones y rentabilidades ----------------------------------------------
 
+
 @router.get("/carteras/{cartera_id}/resumen", response_model=schemas.ResumenCartera)
 async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
     """Posiciones con rentabilidades calculadas en tiempo real via FMP."""
@@ -217,10 +224,14 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
     plusvalia_realizada_cerradas = 0.0  # acumula P/L de posiciones ya cerradas
 
     for instrumento in instrumentos:
-        movs = db.query(models.Movimiento).filter(
-            models.Movimiento.instrumento_id == instrumento.id,
-            models.Movimiento.cartera_id == cartera_id,
-        ).all()
+        movs = (
+            db.query(models.Movimiento)
+            .filter(
+                models.Movimiento.instrumento_id == instrumento.id,
+                models.Movimiento.cartera_id == cartera_id,
+            )
+            .all()
+        )
 
         posicion_fifo = calculos.calcular_posicion_fifo(movs)
 
@@ -235,27 +246,25 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
         if precio_actual is not None:
             plusvalias = calculos.calcular_plusvalia_latente(posicion_fifo, precio_actual)
 
-        posiciones_out.append(schemas.PosicionOut(
-            instrumento=instrumento,
-            cantidad_actual=posicion_fifo["cantidad_actual"],
-            coste_total=posicion_fifo["coste_total"],
-            precio_medio=posicion_fifo["precio_medio"],
-            plusvalia_realizada=posicion_fifo["plusvalia_realizada"],
-            precio_actual=precio_actual,
-            valor_actual=plusvalias.get("valor_actual"),
-            plusvalia_latente=plusvalias.get("plusvalia_latente"),
-            rentabilidad_pct=plusvalias.get("rentabilidad_pct"),
-            plusvalia_total=plusvalias.get("plusvalia_total"),
-        ))
+        posiciones_out.append(
+            schemas.PosicionOut(
+                instrumento=instrumento,
+                cantidad_actual=posicion_fifo["cantidad_actual"],
+                coste_total=posicion_fifo["coste_total"],
+                precio_medio=posicion_fifo["precio_medio"],
+                plusvalia_realizada=posicion_fifo["plusvalia_realizada"],
+                precio_actual=precio_actual,
+                valor_actual=plusvalias.get("valor_actual"),
+                plusvalia_latente=plusvalias.get("plusvalia_latente"),
+                rentabilidad_pct=plusvalias.get("rentabilidad_pct"),
+                plusvalia_total=plusvalias.get("plusvalia_total"),
+            )
+        )
 
     resumen = calculos.calcular_resumen_cartera([p.model_dump() for p in posiciones_out])
     # Sumar la plusvalía realizada de posiciones cerradas que no aparecen en posiciones_out
-    resumen["plusvalia_realizada"] = round(
-        resumen["plusvalia_realizada"] + plusvalia_realizada_cerradas, 2
-    )
-    resumen["plusvalia_total"] = round(
-        resumen["plusvalia_latente"] + resumen["plusvalia_realizada"], 2
-    )
+    resumen["plusvalia_realizada"] = round(resumen["plusvalia_realizada"] + plusvalia_realizada_cerradas, 2)
+    resumen["plusvalia_total"] = round(resumen["plusvalia_latente"] + resumen["plusvalia_realizada"], 2)
 
     return schemas.ResumenCartera(
         cartera=cartera,
@@ -266,6 +275,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
 
 # -- Analisis / Desglose ------------------------------------------------------
 
+
 @router.get("/carteras/{cartera_id}/analisis", response_model=schemas.AnalisisCartera)
 async def analisis_cartera(cartera_id: int, db: Session = Depends(get_db)):
     """Desglose por sector, pais, tipo y moneda."""
@@ -275,13 +285,15 @@ async def analisis_cartera(cartera_id: int, db: Session = Depends(get_db)):
     posiciones_enriquecidas = []
     for p in posiciones:
         instr = p["instrumento"]
-        posiciones_enriquecidas.append({
-            **p,
-            "sector": instr.get("sector"),
-            "pais": instr.get("pais"),
-            "tipo": instr.get("tipo"),
-            "moneda": instr.get("moneda"),
-        })
+        posiciones_enriquecidas.append(
+            {
+                **p,
+                "sector": instr.get("sector"),
+                "pais": instr.get("pais"),
+                "tipo": instr.get("tipo"),
+                "moneda": instr.get("moneda"),
+            }
+        )
 
     return schemas.AnalisisCartera(
         por_sector=calculos.agrupar_por_campo(posiciones_enriquecidas, "sector"),

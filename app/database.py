@@ -1,7 +1,8 @@
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 load_dotenv()
 
@@ -31,4 +32,5 @@ def get_db():
 def init_db():
     """Crea todas las tablas si no existen (útil en desarrollo/SQLite)."""
     from app.models import Base  # import local para evitar circular
+
     Base.metadata.create_all(bind=engine)

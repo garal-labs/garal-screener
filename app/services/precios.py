@@ -4,12 +4,11 @@ Servicio de metadatos y precios de instrumentos financieros.
 - Ticker desde ISIN  → OpenFIGI (gratuito, sin API key)
 - Metadatos + precio → yfinance (Yahoo Finance, sin API key)
 """
+
 import asyncio
+
 import httpx
-from typing import Optional, Dict, List
-
 import yfinance as yf
-
 
 # -- Cabeceras Yahoo ----------------------------------------------------------
 
@@ -27,24 +26,25 @@ _YAHOO_HEADERS = {
 
 # Mapeo país del ISIN → (exchCode OpenFIGI, sufijo Yahoo Finance)
 _ISIN_EXCHANGE_MAP = {
-    "ES": ("SM", ".MC"),   # BME Madrid
-    "DE": ("GR", ".DE"),   # XETRA
-    "FR": ("FP", ".PA"),   # Euronext Paris
-    "GB": ("LN", ".L"),    # LSE
-    "IT": ("IM", ".MI"),   # Borsa Italiana
-    "NL": ("NA", ".AS"),   # Euronext Amsterdam
-    "PT": ("PL", ".LS"),   # Euronext Lisboa
-    "CH": ("SW", ".SW"),   # SIX Swiss
-    "JP": ("JT", ".T"),    # TSE
-    "US": ("US", ""),      # NYSE/NASDAQ — sin sufijo
-    "IE": ("NA", ".AS"),   # ETFs irlandeses → Euronext Amsterdam (más completo en Yahoo)
-    "LU": ("NA", ".AS"),   # ETFs luxemburgueses → Euronext Amsterdam
+    "ES": ("SM", ".MC"),  # BME Madrid
+    "DE": ("GR", ".DE"),  # XETRA
+    "FR": ("FP", ".PA"),  # Euronext Paris
+    "GB": ("LN", ".L"),  # LSE
+    "IT": ("IM", ".MI"),  # Borsa Italiana
+    "NL": ("NA", ".AS"),  # Euronext Amsterdam
+    "PT": ("PL", ".LS"),  # Euronext Lisboa
+    "CH": ("SW", ".SW"),  # SIX Swiss
+    "JP": ("JT", ".T"),  # TSE
+    "US": ("US", ""),  # NYSE/NASDAQ — sin sufijo
+    "IE": ("NA", ".AS"),  # ETFs irlandeses → Euronext Amsterdam (más completo en Yahoo)
+    "LU": ("NA", ".AS"),  # ETFs luxemburgueses → Euronext Amsterdam
 }
 
 
 # -- OpenFIGI: ISIN → ticker --------------------------------------------------
 
-async def _buscar_ticker_por_isin(isin: str) -> Optional[str]:
+
+async def _buscar_ticker_por_isin(isin: str) -> str | None:
     """
     Resuelve ISIN → ticker via OpenFIGI (gratuito, sin API key).
     Prioriza el exchange del país de origen del ISIN.
@@ -83,7 +83,7 @@ async def _buscar_ticker_por_isin(isin: str) -> Optional[str]:
         return None
 
 
-async def _buscar_tickers_en_yahoo(isin: str) -> List[str]:
+async def _buscar_tickers_en_yahoo(isin: str) -> list[str]:
     """
     Busca todos los tickers candidatos en Yahoo Finance por ISIN.
     Devuelve lista ordenada por relevancia para iterar hasta encontrar uno válido.
@@ -104,6 +104,7 @@ async def _buscar_tickers_en_yahoo(isin: str) -> List[str]:
 
 # -- yfinance: metadatos + precio ---------------------------------------------
 
+
 def _tipo_desde_quote_type(quote_type: str) -> str:
     mapping = {
         "EQUITY": "accion",
@@ -113,7 +114,7 @@ def _tipo_desde_quote_type(quote_type: str) -> str:
     return mapping.get((quote_type or "").upper(), "otro")
 
 
-def _obtener_info_yfinance(ticker: str) -> Optional[Dict]:
+def _obtener_info_yfinance(ticker: str) -> dict | None:
     """
     Obtiene metadatos + precio via yfinance (síncrono).
     Se ejecuta en un executor para no bloquear el event loop.
@@ -129,11 +130,7 @@ def _obtener_info_yfinance(ticker: str) -> Optional[Dict]:
         quote_type = info.get("quoteType", "")
         tipo = _tipo_desde_quote_type(quote_type)
 
-        precio = (
-            info.get("regularMarketPrice")
-            or info.get("currentPrice")
-            or info.get("previousClose")
-        )
+        precio = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose")
 
         return {
             "nombre": info.get("longName") or info.get("shortName"),
@@ -151,7 +148,8 @@ def _obtener_info_yfinance(ticker: str) -> Optional[Dict]:
 
 # -- API pública --------------------------------------------------------------
 
-async def enriquecer_por_isin(isin: str) -> Optional[Dict]:
+
+async def enriquecer_por_isin(isin: str) -> dict | None:
     """
     Resuelve ISIN → metadatos completos con estrategia en cascada:
     1. OpenFIGI → ticker → yfinance
@@ -200,7 +198,7 @@ async def enriquecer_por_isin(isin: str) -> Optional[Dict]:
     return None
 
 
-async def obtener_precio_actual(ticker: str) -> Optional[float]:
+async def obtener_precio_actual(ticker: str) -> float | None:
     """Obtiene el precio actual de un ticker via yfinance."""
     if not ticker:
         return None
@@ -209,18 +207,11 @@ async def obtener_precio_actual(ticker: str) -> Optional[float]:
     return perfil.get("precio") if perfil else None
 
 
-async def obtener_precios_batch(tickers: list[str]) -> Dict[str, float]:
+async def obtener_precios_batch(tickers: list[str]) -> dict[str, float]:
     """Obtiene precios de múltiples tickers en paralelo via yfinance."""
     if not tickers:
         return {}
 
-    resultados = await asyncio.gather(
-        *[obtener_precio_actual(t) for t in tickers],
-        return_exceptions=True
-    )
-
-    return {
-        ticker: precio
-        for ticker, precio in zip(tickers, resultados)
-        if isinstance(precio, float)
-    }
+    resultados = await asyncio.gather(*[obtener_precio_actual(ticker) for ticker in tickers], return_exceptions=True)
+    # Sino existe ticker en yahoo no vamos a encontrar precios
+    return {ticker: precio for ticker, precio in zip(tickers, resultados) if isinstance(precio, float)}  # noqa: B905

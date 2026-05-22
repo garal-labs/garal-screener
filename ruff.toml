@@ -21,6 +21,7 @@
 # Ruff tiene cientos de reglas agrupadas por categorías con códigos
 # de letra. Aquí decides qué categorías activar.
 # ══════════════════════════════════════════════════════════════════════════
+line-length = 125
 [lint]
 select = [
     # E, W — pycodestyle
@@ -126,7 +127,7 @@ exclude = [
     "venv",
     "__pycache__",
     "migrations",   # migraciones de Django/Alembic — código autogenerado
-    "alembic",
+    "alembic/*",
 ]
 
 # ══════════════════════════════════════════════════════════════════════════

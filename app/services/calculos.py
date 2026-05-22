@@ -2,15 +2,16 @@
 Servicio de cálculos financieros.
 Toda la lógica de FIFO, plusvalías y rentabilidades vive aquí.
 """
-from typing import List, Dict, Any
+
 from collections import deque
+from typing import Any
 
 
 class VentaInvalidaError(ValueError):
     """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
 
 
-def calcular_posicion_fifo(movimientos: List[Any]) -> Dict:
+def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
     """
     Dado una lista de movimientos ordenados por fecha ASC,
     calcula la posición actual usando el método FIFO.
@@ -67,8 +68,8 @@ def calcular_posicion_fifo(movimientos: List[Any]) -> Dict:
             plusvalia_realizada += ingreso_venta - coste_vendido
 
     # Calculamos posición actual desde lotes restantes
-    cantidad_actual = sum(l[0] for l in lotes)
-    coste_total = sum(l[0] * l[1] for l in lotes)
+    cantidad_actual = sum(lote[0] for lote in lotes)
+    coste_total = sum(lote[0] * lote[1] for lote in lotes)
     precio_medio = coste_total / cantidad_actual if cantidad_actual > 0 else 0.0
 
     return {
@@ -77,13 +78,17 @@ def calcular_posicion_fifo(movimientos: List[Any]) -> Dict:
         "precio_medio": round(precio_medio, 4),
         "plusvalia_realizada": round(plusvalia_realizada, 2),
         "lotes_pendientes": [
-            {"cantidad": round(l[0], 6), "precio_coste": round(l[1], 4), "fecha": str(l[2])}
-            for l in lotes
-        ]
+            {
+                "cantidad": round(lote[0], 6),
+                "precio_coste": round(lote[1], 4),
+                "fecha": str(lote[2]),
+            }
+            for lote in lotes
+        ],
     }
 
 
-def calcular_plusvalia_latente(posicion: Dict, precio_actual_eur: float) -> Dict:
+def calcular_plusvalia_latente(posicion: dict, precio_actual_eur: float) -> dict:
     """
     Con la posición FIFO calculada y el precio actual de mercado,
     calcula la plusvalía latente (no realizada).
@@ -102,7 +107,7 @@ def calcular_plusvalia_latente(posicion: Dict, precio_actual_eur: float) -> Dict
     }
 
 
-def calcular_resumen_cartera(posiciones: List[Dict]) -> Dict:
+def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
     """
     Agrega todas las posiciones en métricas globales de cartera.
     Cada posición debe tener: valor_actual, coste_total, plusvalia_latente,
@@ -127,13 +132,13 @@ def calcular_resumen_cartera(posiciones: List[Dict]) -> Dict:
     }
 
 
-def agrupar_por_campo(posiciones: List[Dict], campo: str) -> List[Dict]:
+def agrupar_por_campo(posiciones: list[dict], campo: str) -> list[dict]:
     """
     Agrupa posiciones por sector, país, tipo, etc.
     Usa valor_actual si hay precio; si no, usa coste_total como fallback.
     Devuelve lista ordenada de mayor a menor peso.
     """
-    grupos: Dict[str, float] = {}
+    grupos: dict[str, float] = {}
 
     for pos in posiciones:
         clave = pos.get(campo) or "Sin clasificar"
@@ -155,6 +160,7 @@ def agrupar_por_campo(posiciones: List[Dict], campo: str) -> List[Dict]:
 
 
 # ── Helpers privados ──────────────────────────────────────────────────────────
+
 
 def _tipo_cambio(mov) -> float:
     """

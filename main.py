@@ -1,13 +1,15 @@
 import os
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
-
-load_dotenv()  # carga .env en local; en Railway las vars vienen del entorno directamente
 
 from app.database import init_db
 from app.routers.api import router
+
+load_dotenv()  # carga .env en local; en Railway las vars vienen del entorno directamente
+
 
 
 def _allowed_origins() -> list[str]:
