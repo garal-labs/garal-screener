@@ -69,15 +69,16 @@ async def buscar_ticker_por_isin(isin: str) -> str | None:
             if exch_code:
                 for item in resultados:
                     if item.get("exchCode") == exch_code:
-                        return item.get("ticker", "") + sufijo
+                        return str(item.get("ticker", "")) + sufijo
 
             # 2. Fallback: preferir exchange US (NYSE/NASDAQ) si existe
             for item in resultados:
                 if item.get("exchCode") == "US":
-                    return item.get("ticker", "")
+                    return str(item.get("ticker", ""))
 
             # 3. Último recurso: primer resultado
-            return resultados[0].get("ticker")
+            ticker = resultados[0].get("ticker")
+            return str(ticker) if ticker is not None else None
     except Exception as e:
         print(f"[OpenFIGI] Error resolviendo ISIN {isin}: {e}")
         return None

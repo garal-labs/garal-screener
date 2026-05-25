@@ -248,7 +248,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
 
         posiciones_out.append(
             schemas.PosicionOut(
-                instrumento=instrumento,
+                instrumento=schemas.InstrumentoOut.model_validate(instrumento),
                 cantidad_actual=posicion_fifo["cantidad_actual"],
                 coste_total=posicion_fifo["coste_total"],
                 precio_medio=posicion_fifo["precio_medio"],
@@ -267,7 +267,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
     resumen["plusvalia_total"] = round(resumen["plusvalia_latente"] + resumen["plusvalia_realizada"], 2)
 
     return schemas.ResumenCartera(
-        cartera=cartera,
+        cartera=schemas.CarteraOut.model_validate(cartera),
         posiciones=posiciones_out,
         **resumen,
     )

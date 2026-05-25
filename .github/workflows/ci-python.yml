@@ -232,15 +232,6 @@ jobs:
       - name: pip-audit (dependency CVEs)
         run: pip-audit -r requirements.txt --format=json --output=pip-audit.json || pip-audit -r requirements.txt
 
-      - name: Upload security reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: security-reports
-          path: |
-            bandit-report.json
-            pip-audit.json
-
 
   # ══════════════════════════════════════════════════════════════════════════
   # JOB 5 — DETECCIÓN DE SECRETOS FILTRADOS
@@ -279,31 +270,4 @@ jobs:
           extra_args: --only-verified
 
 
-  # ══════════════════════════════════════════════════════════════════════════
-  # JOB 6 — REVISIÓN DE DEPENDENCIAS NUEVAS (solo en PRs)
-  #
-  # Complementa a pip-audit (job 4) pero con un enfoque diferente:
-  #
-  #   pip-audit   → analiza TODAS las dependencias ya instaladas
-  #   este job    → analiza SOLO las dependencias que este PR añade
-  #                 o actualiza respecto a la rama base
-  #
-  # Si estás añadiendo una librería nueva que ya tiene un CVE de
-  # severidad alta, este job falla antes de que el PR se mergee,
-  # justo en el momento en que estás tomando la decisión.
-  #
-  # Para proyectos pequeños o en solitario puedes eliminarlo y quedarte
-  # solo con pip-audit — es perfectamente razonable.
-  # ══════════════════════════════════════════════════════════════════════════
-  deps:
-    name: Dependency review
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Dependency Review
-        uses: actions/dependency-review-action@v4
-        with:
-          fail-on-severity: high

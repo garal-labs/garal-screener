@@ -168,11 +168,11 @@ def _tipo_cambio(mov) -> float:
     Si no se ha introducido, asume 1.0 (misma moneda que EUR o ya en EUR).
     """
     # is not None para no confundir tipo_cambio=0.0 (inválido) con ausente
-    return mov.tipo_cambio if mov.tipo_cambio is not None else 1.0
+    return float(mov.tipo_cambio) if mov.tipo_cambio is not None else 1.0
 
 
 def _precio_en_eur(mov) -> float:
     """
     Convierte el precio del movimiento a EUR aplicando tipo de cambio.
     """
-    return mov.precio * _tipo_cambio(mov)
+    return float(mov.precio) * _tipo_cambio(mov)
