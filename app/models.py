@@ -1,3 +1,4 @@
+from sqlalchemy.orm import mapped_column
 from datetime import datetime
 
 from sqlalchemy import Column, Date, DateTime, Float, ForeignKey, Integer, String, Text
@@ -12,10 +13,10 @@ TIPOS_INSTRUMENTO = {"accion", "etf", "fondo", "otro"}
 class Cartera(Base):
     __tablename__ = "carteras"
 
-    id: Mapped[int] = Column(Integer, primary_key=True, index=True)
-    nombre: Mapped[str] = Column(String, nullable=False)
-    descripcion: Mapped[str | None] = Column(Text, nullable=True)
-    created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    nombre: Mapped[str] = mapped_column(String)
+    descripcion: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # cascade="all, delete-orphan" -> al borrar cartera se borran sus movimientos
     movimientos: Mapped[list["Movimiento"]] = relationship("Movimiento", back_populates="cartera", cascade="all, delete-orphan")
@@ -24,16 +25,16 @@ class Cartera(Base):
 class Instrumento(Base):
     __tablename__ = "instrumentos"
 
-    id: Mapped[int] = Column(Integer, primary_key=True, index=True)
-    isin: Mapped[str] = Column(String, unique=True, index=True, nullable=False)
-    ticker: Mapped[str | None] = Column(String, nullable=True)
-    nombre: Mapped[str | None] = Column(String, nullable=True)
-    tipo: Mapped[str | None] = Column(String, nullable=True)  # accion | etf | fondo | otro
-    sector: Mapped[str | None] = Column(String, nullable=True)
-    pais: Mapped[str | None] = Column(String, nullable=True)
-    moneda: Mapped[str | None] = Column(String, nullable=True)  # EUR, USD, JPY...
-    exchange: Mapped[str | None] = Column(String, nullable=True)  # NYSE, BME, XETRA...
-    updated_at: Mapped[datetime | None] = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    isin: Mapped[str] = mapped_column(String, unique=True, index=True)
+    ticker: Mapped[str | None] = mapped_column(String)
+    nombre: Mapped[str | None] = mapped_column(String)
+    tipo: Mapped[str | None] = mapped_column(String)  # accion | etf | fondo | otro
+    sector: Mapped[str | None] = mapped_column(String)
+    pais: Mapped[str | None] = mapped_column(String)
+    moneda: Mapped[str | None] = mapped_column(String)  # EUR, USD, JPY...
+    exchange: Mapped[str | None] = mapped_column(String)  # NYSE, BME, XETRA...
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     movimientos: Mapped[list["Movimiento"]] = relationship("Movimiento", back_populates="instrumento")
 
@@ -41,17 +42,17 @@ class Instrumento(Base):
 class Movimiento(Base):
     __tablename__ = "movimientos"
 
-    id: Mapped[int] = Column(Integer, primary_key=True, index=True)
-    cartera_id: Mapped[int] = Column(Integer, ForeignKey("carteras.id", ondelete="CASCADE"), nullable=False)
-    instrumento_id: Mapped[int] = Column(Integer, ForeignKey("instrumentos.id"), nullable=False)
-    tipo: Mapped[str] = Column(String, nullable=False)  # compra | venta
-    fecha: Mapped[Date] = Column(Date, nullable=False)
-    cantidad: Mapped[float] = Column(Float, nullable=False)
-    precio: Mapped[float] = Column(Float, nullable=False)  # en moneda original del instrumento
-    comision: Mapped[float] = Column(Float, default=0.0)  # opcional, default 0
-    tipo_cambio: Mapped[float | None] = Column(Float, nullable=True)  # opcional, EUR/moneda en la fecha
-    notas: Mapped[str | None] = Column(Text, nullable=True)
-    created_at: Mapped[datetime] = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    cartera_id: Mapped[int] = mapped_column(Integer, ForeignKey("carteras.id", ondelete="CASCADE"))
+    instrumento_id: Mapped[int] = mapped_column(Integer, ForeignKey("instrumentos.id"))
+    tipo: Mapped[str] = mapped_column(String)  # compra | venta
+    fecha: Mapped[Date] = mapped_column(Date)
+    cantidad: Mapped[float] = mapped_column(Float)
+    precio: Mapped[float] = mapped_column(Float)  # en moneda original del instrumento
+    comision: Mapped[float] = mapped_column(Float, default=0.0)  # opcional, default 0
+    tipo_cambio: Mapped[float | None] = mapped_column(Float)  # opcional, EUR/moneda en la fecha
+    notas: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     cartera: Mapped["Cartera"] = relationship("Cartera", back_populates="movimientos")
     instrumento: Mapped["Instrumento"] = relationship("Instrumento", back_populates="movimientos")
