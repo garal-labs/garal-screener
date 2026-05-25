@@ -210,11 +210,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Cartera no encontrada")
 
     instrumentos = (
-        db.query(models.Instrumento)
-        .join(models.Movimiento)
-        .filter(models.Movimiento.cartera_id == cartera_id)
-        .distinct()
-        .all()
+        db.query(models.Instrumento).join(models.Movimiento).filter(models.Movimiento.cartera_id == cartera_id).distinct().all()
     )
 
     tickers = [str(i.ticker) for i in instrumentos if i.ticker]
