@@ -1,0 +1,172 @@
+# pyproject.toml — configuración centralizada del proyecto
+#
+# Este fichero va en la RAÍZ de tu proyecto.
+# Antes cada herramienta tenía su propio fichero de configuración:
+#   pytest.ini, setup.cfg, .mypy.ini, .isort.cfg...
+# El estándar moderno de Python es centralizar todo aquí para tener
+# un solo sitio donde mirar.
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# PYTEST — comportamiento de los tests
+# ══════════════════════════════════════════════════════════════════════════
+[tool.pytest.ini_options]
+
+# Dónde buscar tests. Sin esto pytest busca en todo el proyecto
+# y puede encontrar cosas inesperadas. Con "tests" solo mira ahí.
+testpaths = ["tests"]
+
+# Patrones de nombres que pytest reconoce como tests.
+# Son los valores por defecto pero conviene tenerlos explícitos
+# para que la convención del proyecto quede clara.
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# Flags que se aplican a CADA ejecución de pytest automáticamente,
+# como si los escribieras en la terminal siempre.
+addopts = [
+    # Muestra cada test con su nombre y resultado en lugar de un punto
+    # por test. Útil para saber exactamente qué está pasando.
+    "-v",
+
+    # Controla cómo se muestran los errores cuando un test falla.
+    # "short" muestra solo las líneas relevantes del traceback,
+    # no el stacktrace completo. Más legible.
+    "--tb=short",
+
+    # Hace que pytest falle si usas un marker no registrado.
+    # Sin esto, un typo como @pytest.mark.integartion (en vez de
+    # "integration") pasa silenciosamente y el test nunca se excluye
+    # cuando quieres. Con esto falla inmediatamente y te avisa.
+    "--strict-markers",
+]
+
+# Markers registrados para categorizar tests.
+# Permiten ejecutar solo una categoría:
+#   pytest -m unit          → solo tests rápidos
+#   pytest -m "not slow"    → todo excepto los lentos
+#   pytest -m integration   → solo tests que necesitan servicios externos
+#
+# Uso en el código:
+#   @pytest.mark.unit
+#   def test_suma():
+#       ...
+markers = [
+    "unit: tests unitarios rápidos",
+    "integration: tests que requieren servicios externos",
+    "slow: tests lentos (excluir con -m 'not slow')",
+]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# COVERAGE — cómo se mide la cobertura de tests
+# ══════════════════════════════════════════════════════════════════════════
+[tool.coverage.run]
+
+# Qué código medir. Con "." mide todo el proyecto.
+source = ["."]
+
+# Carpetas excluidas de la medición. No tiene sentido medir:
+#   tests/       — el propio código de tests
+#   venv/        — librerías externas instaladas
+#   migrations/  — código autogenerado por Django/Alembic
+omit = [
+    "tests/*",
+    "venv/*",
+    ".venv/*",
+    "*/migrations/*",
+    "setup.py",
+]
+
+# Mide cobertura de RAMAS, no solo de líneas.
+# Sin esto, coverage solo cuenta si una línea se ejecutó o no.
+# Con branch = true también mide si los dos caminos de un if se probaron:
+#
+#   def divide(a, b):
+#       if b == 0:        ← ¿se probó tanto b==0 como b!=0?
+#           return None
+#       return a / b
+#
+# Sin branch: un test que llama divide(10, 2) da 100% porque todas
+# las líneas se ejecutan. Con branch: detecta que b==0 nunca se probó.
+branch = true
+
+[tool.coverage.report]
+
+# Mismo umbral que en el CI. Si ejecutas pytest --cov localmente
+# también falla si bajas del 70%, no solo en el CI.
+fail_under = 70
+
+# Muestra en el reporte qué líneas específicas no están cubiertas.
+# Ejemplo:
+#   src/auth.py    45    8    82%   23-31, 67
+#                                   ↑ estas líneas no tienen test
+show_missing = true
+
+# Incluye en el reporte también los archivos con 100% de cobertura,
+# no solo los que tienen gaps. Útil para ver el estado completo.
+skip_covered = false
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# MYPY — verificación de tipos
+#
+# Solo es útil si usas type hints en tu código:
+#   def suma(a: int, b: int) -> int:
+#       return a + b
+#
+# Si no usas type hints todavía, mypy pasará sin hacer nada útil.
+# Puedes ignorar esta sección hasta que empieces a adoptarlos.
+# ══════════════════════════════════════════════════════════════════════════
+[tool.mypy]
+python_version = "3.12"
+
+# Falla si una función devuelve `Any` implícitamente.
+# Any es el tipo que mypy usa cuando no sabe qué tipo es algo.
+# Si se cuela silenciosamente pierdes las ventajas del type checking.
+warn_return_any = true
+warn_unused_configs = true
+
+# Evita que mypy falle cuando una librería externa no tiene type stubs.
+# Muchas librerías populares no los tienen — sin esta opción mypy
+# fallaría en `import requests` aunque tu código sea correcto.
+ignore_missing_imports = true
+
+# app.models usa el estilo declarative_base() (SQLAlchemy 1.x/legacy) que
+# requiere mapped_column() + DeclarativeBase para funcionar bien con mypy.
+# Silenciamos los errores del ORM boilerplate hasta que migremos al nuevo estilo.
+[[tool.mypy.overrides]]
+module = "app.models"
+ignore_errors = true
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# BLACK — formateador
+# ══════════════════════════════════════════════════════════════════════════
+[tool.black]
+
+# 88 es el valor por defecto de Black. Lo importante es que Black
+# e isort usen el mismo valor, si no pueden entrar en conflicto.
+line-length = 130
+
+# Para qué versiones de Python formatear. Afecta si usa f-strings
+# u otras sintaxis modernas.
+target-version = ["py311", "py312"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ISORT — orden de imports
+# ══════════════════════════════════════════════════════════════════════════
+[tool.isort]
+
+# La opción más importante de esta sección.
+# Por defecto isort y Black tienen reglas de formato que se contradicen.
+# Con profile = "black" le dices a isort que se adapte a Black
+# y nunca entren en conflicto entre sí.
+profile = "black"
+
+# ⚠️  CAMBIA ESTO en cada proyecto nuevo.
+# El nombre de tu propio paquete para que isort lo trate como import
+# interno y lo ordene correctamente (después de librerías externas).
+known_first_party = ["garal_screener"]
