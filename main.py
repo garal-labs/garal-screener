@@ -11,7 +11,6 @@ from app.routers.api import router
 load_dotenv()  # carga .env en local; en Railway las vars vienen del entorno directamente
 
 
-
 def _allowed_origins() -> list[str]:
     """
     Lee ALLOWED_ORIGINS del entorno.

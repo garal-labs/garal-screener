@@ -125,6 +125,7 @@ python_version = "3.12"
 # Falla si una función devuelve `Any` implícitamente.
 # Any es el tipo que mypy usa cuando no sabe qué tipo es algo.
 # Si se cuela silenciosamente pierdes las ventajas del type checking.
+plugins = ["sqlalchemy.ext.mypy.plugin"]
 warn_return_any = true
 
 # Avisa si hay opciones en este fichero que mypy no reconoce.

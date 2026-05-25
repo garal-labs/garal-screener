@@ -217,7 +217,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
-    tickers = [i.ticker for i in instrumentos if i.ticker]
+    tickers = [str(i.ticker) for i in instrumentos if i.ticker]
     precios_actuales = await precios.obtener_precios_batch(tickers) if tickers else {}
 
     posiciones_out = []
@@ -240,7 +240,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
             plusvalia_realizada_cerradas += posicion_fifo["plusvalia_realizada"]
             continue
 
-        precio_actual = precios_actuales.get(instrumento.ticker) if instrumento.ticker else None
+        precio_actual = precios_actuales.get(str(instrumento.ticker)) if instrumento.ticker else None
 
         plusvalias = {}
         if precio_actual is not None:
@@ -296,8 +296,8 @@ async def analisis_cartera(cartera_id: int, db: Session = Depends(get_db)):
         )
 
     return schemas.AnalisisCartera(
-        por_sector=calculos.agrupar_por_campo(posiciones_enriquecidas, "sector"),
-        por_pais=calculos.agrupar_por_campo(posiciones_enriquecidas, "pais"),
-        por_tipo=calculos.agrupar_por_campo(posiciones_enriquecidas, "tipo"),
-        por_moneda=calculos.agrupar_por_campo(posiciones_enriquecidas, "moneda"),
+        por_sector=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "sector")],
+        por_pais=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "pais")],
+        por_tipo=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "tipo")],
+        por_moneda=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "moneda")],
     )

@@ -24,7 +24,7 @@ def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
         lotes               → lotes FIFO pendientes (para debug o detalle)
     """
     # Cola FIFO: cada elemento es [cantidad_restante, precio_eur, fecha]
-    lotes = deque()
+    lotes: deque[list[Any]] = deque()
     plusvalia_realizada = 0.0
 
     # Orden determinístico: fecha ASC, id ASC para desempate intradía

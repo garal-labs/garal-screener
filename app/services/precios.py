@@ -44,7 +44,7 @@ _ISIN_EXCHANGE_MAP = {
 # -- OpenFIGI: ISIN → ticker --------------------------------------------------
 
 
-async def _buscar_ticker_por_isin(isin: str) -> str | None:
+async def buscar_ticker_por_isin(isin: str) -> str | None:
     """
     Resuelve ISIN → ticker via OpenFIGI (gratuito, sin API key).
     Prioriza el exchange del país de origen del ISIN.
@@ -160,7 +160,7 @@ async def enriquecer_por_isin(isin: str) -> dict | None:
     loop = asyncio.get_event_loop()
 
     # 1. Intentar via OpenFIGI
-    ticker = await _buscar_ticker_por_isin(isin)
+    ticker = await buscar_ticker_por_isin(isin)
     if ticker:
         perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
         if perfil:
