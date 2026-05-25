@@ -21,7 +21,7 @@
 # Ruff tiene cientos de reglas agrupadas por categorías con códigos
 # de letra. Aquí decides qué categorías activar.
 # ══════════════════════════════════════════════════════════════════════════
-line-length = 125
+line-length = 130
 [lint]
 select = [
     # E, W — pycodestyle
