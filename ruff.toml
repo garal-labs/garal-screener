@@ -1,0 +1,167 @@
+# ruff.toml — configuración de Ruff para tu proyecto
+#
+# Este fichero va en la RAÍZ de tu proyecto, no en .github/.
+# Lo leen tres sitios distintos con la misma configuración:
+#   - Tu IDE o agente (Antigravity, Claude Code, OpenCode...)
+#     cuando analiza el código mientras trabajas
+#   - Tu terminal cuando ejecutas `ruff check .` manualmente
+#   - El CI cuando el job de lint ejecuta `ruff check .`
+#
+# Esto garantiza que las reglas son idénticas en los tres sitios.
+# No puede pasar que tu IDE no avise de algo y el CI falle por ello.
+#
+# Ruff reemplaza varias herramientas de golpe:
+#   flake8, pylint, pyupgrade, y parte de isort.
+# Es entre 10 y 100 veces más rápido que cualquiera de ellas.
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# REGLAS ACTIVAS
+#
+# Ruff tiene cientos de reglas agrupadas por categorías con códigos
+# de letra. Aquí decides qué categorías activar.
+# ══════════════════════════════════════════════════════════════════════════
+line-length = 130
+[lint]
+select = [
+    # E, W — pycodestyle
+    # Las reglas más básicas de PEP 8: líneas demasiado largas, espacios
+    # donde no deben estar, indentación incorrecta.
+    # E = errores, W = warnings.
+    "E",
+    "W",
+
+    # F — pyflakes
+    # Detecta problemas reales de código, no solo de estilo. Ejemplos:
+    #   - Importas `os` pero nunca lo usas
+    #   - Usas una variable que nunca definiste
+    #   - Defines una función dos veces en el mismo archivo
+    # Estos son bugs potenciales, no solo cuestiones estéticas.
+    "F",
+
+    # I — isort
+    # Imports desordenados. Con esto activado aquí ya no necesitas
+    # isort como herramienta separada (aunque en el CI lo tenemos
+    # redundante por claridad mientras aprendes cada pieza).
+    "I",
+
+    # N — pep8-naming
+    # Convenciones de nombres:
+    #   - Clases:     MiClase     (CamelCase)
+    #   - Funciones:  mi_funcion  (snake_case)
+    #   - Constantes: MI_CONSTANTE (mayúsculas)
+    # Falla si nombras una clase `mi_clase` o una función `MiFuncion`.
+    "N",
+
+    # UP — pyupgrade
+    # Detecta código Python antiguo con equivalente moderno más limpio:
+    #   - `%s` string formatting  →  f-strings
+    #   - `typing.List`           →  `list`
+    #   - `typing.Optional[str]`  →  `str | None`
+    # Básicamente moderniza tu código automáticamente.
+    "UP",
+
+    # B — flake8-bugbear
+    # Detecta errores sutiles que son legales en Python pero casi
+    # siempre son bugs. El más clásico:
+    #
+    #   def añadir(item, lista=[]):  # B006 — mutable default argument
+    #       lista.append(item)       # La lista se comparte entre todas
+    #       return lista             # las llamadas. Bug muy común.
+    #
+    # Esta categoría es especialmente valiosa porque atrapa cosas que
+    # ni flake8 ni pylint detectaban.
+    "B",
+
+    # S — seguridad básica (bandit)
+    # Ruff incluye reglas de seguridad solapadas con Bandit. Detecta
+    # los patrones más obvios directamente en el linting, sin necesitar
+    # ejecutar Bandit por separado. Bandit en el job de security del CI
+    # es más exhaustivo, pero tener S aquí da feedback inmediato
+    # mientras escribes o mientras el agente genera código.
+    "S",
+
+    # C90 — complejidad ciclomática
+    # Mide qué tan compleja es una función contando cuántos caminos
+    # de ejecución posibles tiene. Cada if, for, while, except añade 1.
+    # Con max-complexity = 10 (configurado abajo) falla si una función
+    # tiene más de 10 caminos. Fuerza a dividir funciones largas en
+    # funciones más pequeñas y testeables.
+    "C90",
+]
+
+# ══════════════════════════════════════════════════════════════════════════
+# REGLAS IGNORADAS GLOBALMENTE
+#
+# Activas una categoría entera pero desactivas reglas individuales
+# que no tienen sentido en tu contexto.
+# ══════════════════════════════════════════════════════════════════════════
+ignore = [
+    # S101 — uso de `assert` marcado como inseguro
+    # Bandit marca assert como inseguro porque Python puede correr con
+    # -O (optimización) que desactiva los asserts en producción.
+    # Pero en tests, assert es exactamente lo que debes usar.
+    # Lo ignoramos aquí porque per-file-ignores ya lo desactiva en
+    # tests, pero si tienes asserts defensivos en código de producción
+    # también querrías mantener esta excepción.
+    "S101",
+
+    # B008 — llamadas a funciones como valores por defecto
+    # Bugbear se queja de este patrón, pero FastAPI lo usa
+    # intencionalmente para inyección de dependencias:
+    #
+    #   def endpoint(db: Session = Depends(get_db)):  # correcto en FastAPI
+    #
+    # Si no usas FastAPI puedes quitar esta excepción.
+    "B008",
+]
+
+# ══════════════════════════════════════════════════════════════════════════
+# CARPETAS EXCLUIDAS
+#
+# Ruff no analiza estas carpetas. Son entornos virtuales, caché de
+# Python, o carpetas de migraciones autogeneradas que no escribes tú.
+# ══════════════════════════════════════════════════════════════════════════
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    "migrations",   # migraciones de Django/Alembic — código autogenerado
+    "alembic/*",
+]
+
+# ══════════════════════════════════════════════════════════════════════════
+# REGLAS DISTINTAS POR TIPO DE ARCHIVO
+#
+# En tests relajamos dos categorías:
+#   S — seguridad: en tests es normal usar patrones que en producción
+#       serían peligrosos (conexiones sin SSL, datos hardcodeados...)
+#   N — naming: en tests son habituales nombres cortos como `x`,
+#       `mock_db`, o funciones que no siguen snake_case estricto
+# ══════════════════════════════════════════════════════════════════════════
+[lint.per-file-ignores]
+"tests/**" = ["S", "N"]
+
+# ══════════════════════════════════════════════════════════════════════════
+# COMPLEJIDAD MÁXIMA
+#
+# Aplicado a la regla C90. Una función con más de 10 caminos posibles
+# de ejecución es señal de que debería dividirse en funciones más
+# pequeñas. Ajusta este número si tu dominio lo requiere — algunos
+# proyectos usan 8 (más estricto) o 15 (más permisivo).
+# ══════════════════════════════════════════════════════════════════════════
+[lint.mccabe]
+max-complexity = 10
+
+# ══════════════════════════════════════════════════════════════════════════
+# FORMATO
+#
+# Configura Ruff como formateador, separado del linting.
+# Estas opciones están alineadas con Black para que sean compatibles.
+# Si en algún momento quieres simplificar y usar solo Ruff en lugar
+# de Black + Ruff, la configuración ya es compatible y solo tendrías
+# que eliminar el paso de Black del CI.
+# ══════════════════════════════════════════════════════════════════════════
+[format]
+quote-style = "double"   # comillas dobles, igual que Black
+indent-style = "space"   # espacios en lugar de tabs, igual que Black
