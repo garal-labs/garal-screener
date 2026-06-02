@@ -16,7 +16,7 @@ class Cartera(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     nombre: Mapped[str] = mapped_column(String)
     descripcion: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now())
 
     # cascade="all, delete-orphan" -> al borrar cartera se borran sus movimientos
     movimientos: Mapped[list["Movimiento"]] = relationship("Movimiento", back_populates="cartera", cascade="all, delete-orphan")
@@ -34,7 +34,7 @@ class Instrumento(Base):
     pais: Mapped[str | None] = mapped_column(String)
     moneda: Mapped[str | None] = mapped_column(String)  # EUR, USD, JPY...
     exchange: Mapped[str | None] = mapped_column(String)  # NYSE, BME, XETRA...
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, default=datetime.now(), onupdate=datetime.now())
 
     movimientos: Mapped[list["Movimiento"]] = relationship("Movimiento", back_populates="instrumento")
 
@@ -52,7 +52,7 @@ class Movimiento(Base):
     comision: Mapped[float] = mapped_column(Float, default=0.0)  # opcional, default 0
     tipo_cambio: Mapped[float | None] = mapped_column(Float)  # opcional, EUR/moneda en la fecha
     notas: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now())
 
     cartera: Mapped["Cartera"] = relationship("Cartera", back_populates="movimientos")
     instrumento: Mapped["Instrumento"] = relationship("Instrumento", back_populates="movimientos")
