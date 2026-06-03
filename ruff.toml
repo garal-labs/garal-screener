@@ -11,7 +11,7 @@
 # No puede pasar que tu IDE no avise de algo y el CI falle por ello.
 #
 # Ruff reemplaza varias herramientas de golpe:
-#   flake8, pylint, pyupgrade, y parte de isort.
+#   flake8, pylint, pyupgrade, isort y black.
 # Es entre 10 y 100 veces más rápido que cualquiera de ellas.
 
 
@@ -22,6 +22,11 @@
 # de letra. Aquí decides qué categorías activar.
 # ══════════════════════════════════════════════════════════════════════════
 line-length = 130
+
+# Versión de Python objetivo. Afecta qué sintaxis moderna puede sugerir
+# la regla UP (pyupgrade). Con py312 puede sugerir, por ejemplo,
+# usar `str | None` en lugar de `Optional[str]`.
+target-version = "py312"
 [lint]
 select = [
     # E, W — pycodestyle
@@ -154,13 +159,25 @@ exclude = [
 max-complexity = 10
 
 # ══════════════════════════════════════════════════════════════════════════
+# ISORT — configuración del ordenador de imports
+#
+# Ruff incluye el motor de isort activado con la regla "I" del bloque
+# [lint] de arriba. Esta sección configura su comportamiento.
+# ══════════════════════════════════════════════════════════════════════════
+[lint.isort]
+
+# ⚠️  CAMBIA ESTO en cada proyecto nuevo.
+# El nombre de tu propio paquete para que isort lo trate como import
+# interno y lo ordene correctamente (después de librerías externas,
+# antes de imports relativos).
+known-first-party = ["garal_screener"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # FORMATO
 #
-# Configura Ruff como formateador, separado del linting.
-# Estas opciones están alineadas con Black para que sean compatibles.
-# Si en algún momento quieres simplificar y usar solo Ruff en lugar
-# de Black + Ruff, la configuración ya es compatible y solo tendrías
-# que eliminar el paso de Black del CI.
+# Configura Ruff como formateador (equivalente a Black).
+# Reemplaza a Black completamente — ya no necesitas black instalado.
 # ══════════════════════════════════════════════════════════════════════════
 [format]
 quote-style = "double"   # comillas dobles, igual que Black

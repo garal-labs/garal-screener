@@ -140,33 +140,3 @@ ignore_missing_imports = true
 module = "app.models"
 ignore_errors = true
 
-
-# ══════════════════════════════════════════════════════════════════════════
-# BLACK — formateador
-# ══════════════════════════════════════════════════════════════════════════
-[tool.black]
-
-# 88 es el valor por defecto de Black. Lo importante es que Black
-# e isort usen el mismo valor, si no pueden entrar en conflicto.
-line-length = 130
-
-# Para qué versiones de Python formatear. Afecta si usa f-strings
-# u otras sintaxis modernas.
-target-version = ["py311", "py312"]
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# ISORT — orden de imports
-# ══════════════════════════════════════════════════════════════════════════
-[tool.isort]
-
-# La opción más importante de esta sección.
-# Por defecto isort y Black tienen reglas de formato que se contradicen.
-# Con profile = "black" le dices a isort que se adapte a Black
-# y nunca entren en conflicto entre sí.
-profile = "black"
-
-# ⚠️  CAMBIA ESTO en cada proyecto nuevo.
-# El nombre de tu propio paquete para que isort lo trate como import
-# interno y lo ordene correctamente (después de librerías externas).
-known_first_party = ["garal_screener"]
