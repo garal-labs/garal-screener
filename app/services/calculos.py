@@ -6,12 +6,13 @@ Toda la lógica de FIFO, plusvalías y rentabilidades vive aquí.
 from collections import deque
 from typing import Any
 
+from app.models import Movimiento
 
 class VentaInvalidaError(ValueError):
     """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
 
 
-def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
+def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
     """
     Dado una lista de movimientos ordenados por fecha ASC,
     calcula la posición actual usando el método FIFO.
@@ -28,17 +29,17 @@ def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
     plusvalia_realizada = 0.0
 
     # Orden determinístico: fecha ASC, id ASC para desempate intradía
-    for mov in sorted(movimientos, key=lambda m: (m.fecha, m.id)):
-        precio_eur = _precio_en_eur(mov)
-        comision = mov.comision or 0.0
+    for movimientos_ordenados in sorted(movimientos, key=lambda m: (m.fecha, m.id)):
+        precio_eur = _precio_en_eur(movimientos_ordenados)
+        comision = movimientos_ordenados.comision or 0.0
 
-        if mov.tipo == "compra":
+        if movimientos_ordenados.tipo == "compra":
             # Añadimos lote: precio unitario incluyendo comisión prorrateada
-            precio_unitario = precio_eur + (comision / mov.cantidad)
-            lotes.append([mov.cantidad, precio_unitario, mov.fecha])
+            precio_unitario = precio_eur + (comision / movimientos_ordenados.cantidad)
+            lotes.append([movimientos_ordenados.cantidad, precio_unitario, movimientos_ordenados.fecha])
 
-        elif mov.tipo == "venta":
-            cantidad_vender = mov.cantidad
+        elif movimientos_ordenados.tipo == "venta":
+            cantidad_vender = movimientos_ordenados.cantidad
             coste_vendido = 0.0
 
             while cantidad_vender > 0 and lotes:
@@ -59,12 +60,12 @@ def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
             # Si después del while todavía queda por vender, los datos son inconsistentes
             if cantidad_vender > 0:
                 raise VentaInvalidaError(
-                    f"Movimiento id={mov.id}: intento de vender {mov.cantidad} unidades "
+                    f"Movimiento id={movimientos_ordenados.id}: intento de vender {movimientos_ordenados.cantidad} unidades "
                     f"pero los lotes FIFO no tienen suficiente stock."
                 )
 
             # Ingreso de la venta en EUR menos comisión
-            ingreso_venta = (mov.precio * mov.cantidad * _tipo_cambio(mov)) - comision
+            ingreso_venta = (movimientos_ordenados.precio * movimientos_ordenados.cantidad * _tipo_cambio(movimientos_ordenados)) - comision
             plusvalia_realizada += ingreso_venta - coste_vendido
 
     # Calculamos posición actual desde lotes restantes
@@ -87,6 +88,19 @@ def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
         ],
     }
 
+def _precio_en_eur(mov) -> float:
+    """
+    Convierte el precio del movimiento a EUR aplicando tipo de cambio.
+    """
+    return float(mov.precio) * _tipo_cambio(mov)
+
+def _tipo_cambio(mov) -> float:
+    """
+    Devuelve el tipo de cambio a aplicar.
+    Si no se ha introducido, asume 1.0 (misma moneda que EUR o ya en EUR).
+    """
+    # is not None para no confundir tipo_cambio=0.0 (inválido) con ausente
+    return float(mov.tipo_cambio) if mov.tipo_cambio is not None else 1.0
 
 def calcular_plusvalia_latente(posicion: dict, precio_actual_eur: float) -> dict:
     """
@@ -162,17 +176,7 @@ def agrupar_por_campo(posiciones: list[dict], campo: str) -> list[dict]:
 # ── Helpers privados ──────────────────────────────────────────────────────────
 
 
-def _tipo_cambio(mov) -> float:
-    """
-    Devuelve el tipo de cambio a aplicar.
-    Si no se ha introducido, asume 1.0 (misma moneda que EUR o ya en EUR).
-    """
-    # is not None para no confundir tipo_cambio=0.0 (inválido) con ausente
-    return float(mov.tipo_cambio) if mov.tipo_cambio is not None else 1.0
 
 
-def _precio_en_eur(mov) -> float:
-    """
-    Convierte el precio del movimiento a EUR aplicando tipo de cambio.
-    """
-    return float(mov.precio) * _tipo_cambio(mov)
+
+

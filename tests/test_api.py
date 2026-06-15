@@ -4,6 +4,7 @@ Todos los tests usan SQLite en memoria (ver conftest.py).
 Las llamadas externas (FMP, Anthropic) se mockean.
 """
 
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -68,12 +69,23 @@ MOCK_IA = {
 
 
 def mock_precios():
-    """Contexto que parchea las llamadas externas de precios/yfinance."""
-    return patch.multiple(
-        "app.routers.api.precios",
-        enriquecer_por_isin=AsyncMock(return_value={**MOCK_IA, "ticker": "AAPL"}),
-        obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
+    """Contexto que parchea las llamadas externas de precios/yfinance.
+    Tras la separación de api.py, precios se usa en movimientos.py y posiciones.py.
+    """
+    stack = ExitStack()
+    stack.enter_context(
+        patch.multiple(
+            "app.routers.movimientos.precios",
+            enriquecer_por_isin=AsyncMock(return_value={**MOCK_IA, "ticker": "AAPL"}),
+        )
     )
+    stack.enter_context(
+        patch.multiple(
+            "app.routers.posiciones.precios",
+            obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
+        )
+    )
+    return stack
 
 
 class TestMovimientos:
