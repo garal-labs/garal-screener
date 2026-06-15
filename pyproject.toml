@@ -12,6 +12,9 @@
 # ══════════════════════════════════════════════════════════════════════════
 [tool.pytest.ini_options]
 
+# Modo automático para ejecutar tests asíncronos con pytest-asyncio
+asyncio_mode = "auto"
+
 # Dónde buscar tests. Sin esto pytest busca en todo el proyecto
 # y puede encontrar cosas inesperadas. Con "tests" solo mira ahí.
 testpaths = ["tests"]
