@@ -8,6 +8,7 @@ from typing import Any
 
 from app.models import Movimiento
 
+
 class VentaInvalidaError(ValueError):
     """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
 
