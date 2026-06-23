@@ -110,6 +110,8 @@ ignore = [
     # tests, pero si tienes asserts defensivos en código de producción
     # también querrías mantener esta excepción.
     "S101",
+    #ZIP
+    "B905",
 
     # B008 — llamadas a funciones como valores por defecto
     # Bugbear se queja de este patrón, pero FastAPI lo usa
@@ -131,7 +133,7 @@ exclude = [
     ".venv",
     "venv",
     "__pycache__",
-    "migrations",   # migraciones de Django/Alembic — código autogenerado
+    "migrations",  # migraciones de Django/Alembic — código autogenerado
     "alembic/*",
 ]
 
@@ -180,5 +182,5 @@ known-first-party = ["garal_screener"]
 # Reemplaza a Black completamente — ya no necesitas black instalado.
 # ══════════════════════════════════════════════════════════════════════════
 [format]
-quote-style = "double"   # comillas dobles, igual que Black
-indent-style = "space"   # espacios en lugar de tabs, igual que Black
+quote-style = "double" # comillas dobles, igual que Black
+indent-style = "space" # espacios en lugar de tabs, igual que Black
