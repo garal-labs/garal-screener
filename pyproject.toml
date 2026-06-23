@@ -143,3 +143,15 @@ ignore_missing_imports = true
 module = "app.models"
 ignore_errors = true
 
+
+# ══════════════════════════════════════════════════════════════════════════
+# RUFF — linting y formato
+# ══════════════════════════════════════════════════════════════════════════
+[tool.ruff.lint]
+select = ["E", "W", "F", "I"]
+
+[tool.ruff.lint.isort]
+# Sin esto ruff no sabe que `app` es first-party y puede clasificar
+# las importaciones incorrectamente generando falsos I001.
+known-first-party = ["app"]
+

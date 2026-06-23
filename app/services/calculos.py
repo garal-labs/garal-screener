@@ -65,7 +65,11 @@ def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
                 )
 
             # Ingreso de la venta en EUR menos comisión
-            ingreso_venta = (movimientos_ordenados.precio * movimientos_ordenados.cantidad * _tipo_cambio(movimientos_ordenados)) - comision
+            ingreso_venta = (
+                movimientos_ordenados.precio
+                * movimientos_ordenados.cantidad
+                * _tipo_cambio(movimientos_ordenados)
+            ) - comision
             plusvalia_realizada += ingreso_venta - coste_vendido
 
     # Calculamos posición actual desde lotes restantes

@@ -193,3 +193,16 @@ async def _obtener_precio_actual(ticker: str) -> float | None:
     loop = asyncio.get_event_loop()
     perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
     return perfil.get("precio") if perfil else None
+
+
+# ── Public aliases (backwards-compatible API) ─────────────────────────────────
+
+
+async def buscar_ticker_por_isin(isin: str) -> str | None:
+    """Public alias for _buscar_ticker_en_openfigi."""
+    return await _buscar_ticker_en_openfigi(isin)
+
+
+async def obtener_precio_actual(ticker: str) -> float | None:
+    """Public alias for _obtener_precio_actual."""
+    return await _obtener_precio_actual(ticker)
