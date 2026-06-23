@@ -12,7 +12,9 @@ import yfinance as yf
 
 _YAHOO_HEADERS = {
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " "AppleWebKit/537.36 (KHTML, like Gecko) " "Chrome/120.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
     ),
     "Accept": "application/json",
 }
@@ -57,7 +59,9 @@ async def enriquecer_por_isin(isin: str) -> dict | None:
                 "moneda": perfil.get("moneda"),
                 "exchange": perfil.get("exchange"),
             }
-        print(f"[yfinance] Ticker {ticker} no encontrado, intentando búsqueda directa por ISIN...")
+        print(
+            f"[yfinance] Ticker {ticker} no encontrado, intentando búsqueda directa por ISIN..."
+        )
 
     # 2. Fallback: búsqueda directa en Yahoo por ISIN, iterando candidatos
     candidatos = await _buscar_tickers_en_yahoo(isin)
@@ -78,7 +82,9 @@ async def enriquecer_por_isin(isin: str) -> dict | None:
                 "exchange": perfil.get("exchange"),
             }
 
-    print(f"[yfinance] Ningún candidato de Yahoo funcionó para ISIN {isin}: {candidatos}")
+    print(
+        f"[yfinance] Ningún candidato de Yahoo funcionó para ISIN {isin}: {candidatos}"
+    )
     return None
 
 async def _buscar_ticker_en_openfigi(isin: str) -> str | None:
@@ -126,7 +132,9 @@ async def _buscar_tickers_en_yahoo(isin: str) -> list[str]:
     Devuelve lista ordenada por relevancia para iterar hasta encontrar uno válido.
     """
     try:
-        async with httpx.AsyncClient(timeout=10, headers=_YAHOO_HEADERS, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=10, headers=_YAHOO_HEADERS, follow_redirects=True
+        ) as client:
             r = await client.get(
                 "https://query1.finance.yahoo.com/v1/finance/search",
                 params={"q": isin, "lang": "en-US", "type": "quotes"},
@@ -147,14 +155,22 @@ def _obtener_info_yfinance(ticker: str) -> dict | None:
         t = yf.Ticker(ticker)
         info = t.info
 
-        if not info or info.get("trailingPegRatio") is None and not info.get("longName"):
+        if (
+            not info
+            or info.get("trailingPegRatio") is None
+            and not info.get("longName")
+        ):
             # yfinance devuelve un dict vacío o inútil si el ticker no existe
             return None
 
         quote_type = info.get("quoteType", "")
         tipo = _tipo_desde_quote_type(quote_type)
 
-        precio = info.get("regularMarketPrice") or info.get("currentPrice") or info.get("previousClose")
+        precio = (
+            info.get("regularMarketPrice")
+            or info.get("currentPrice")
+            or info.get("previousClose")
+        )
 
         return {
             "nombre": info.get("longName") or info.get("shortName"),
@@ -182,9 +198,15 @@ async def obtener_precios_batch(tickers: list[str]) -> dict[str, float]:
     if not tickers:
         return {}
 
-    resultados = await asyncio.gather(*[_obtener_precio_actual(ticker) for ticker in tickers], return_exceptions=True)
+    resultados = await asyncio.gather(
+        *[_obtener_precio_actual(ticker) for ticker in tickers], return_exceptions=True
+    )
     # Sino existe ticker en yahoo no vamos a encontrar precios
-    return {ticker: precio for ticker, precio in zip(tickers, resultados) if isinstance(precio, float)}  # noqa: B905
+    return {
+        ticker: precio
+        for ticker, precio in zip(tickers, resultados)
+        if isinstance(precio, float)
+    }  # noqa: B905
 
 async def _obtener_precio_actual(ticker: str) -> float | None:
     """Obtiene el precio actual de un ticker via yfinance."""
@@ -194,14 +216,11 @@ async def _obtener_precio_actual(ticker: str) -> float | None:
     perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
     return perfil.get("precio") if perfil else None
 
-
 # ── Public aliases (backwards-compatible API) ─────────────────────────────────
-
 
 async def buscar_ticker_por_isin(isin: str) -> str | None:
     """Public alias for _buscar_ticker_en_openfigi."""
     return await _buscar_ticker_en_openfigi(isin)
-
 
 async def obtener_precio_actual(ticker: str) -> float | None:
     """Public alias for _obtener_precio_actual."""

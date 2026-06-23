@@ -19,7 +19,6 @@ from app.services.calculos import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
 def compra(id, fecha, cantidad, precio, comision=0.0, tipo_cambio=None):
     return SimpleNamespace(
         id=id,
@@ -30,7 +29,6 @@ def compra(id, fecha, cantidad, precio, comision=0.0, tipo_cambio=None):
         comision=comision,
         tipo_cambio=tipo_cambio,
     )
-
 
 def venta(id, fecha, cantidad, precio, comision=0.0, tipo_cambio=None):
     return SimpleNamespace(
@@ -43,14 +41,11 @@ def venta(id, fecha, cantidad, precio, comision=0.0, tipo_cambio=None):
         tipo_cambio=tipo_cambio,
     )
 
-
 D1 = date(2024, 1, 1)
 D2 = date(2024, 2, 1)
 D3 = date(2024, 3, 1)
 
-
 # ── calcular_posicion_fifo ────────────────────────────────────────────────────
-
 
 class TestCalcularPosicionFifo:
     def test_compra_unica(self):
@@ -149,9 +144,7 @@ class TestCalcularPosicionFifo:
         assert r["coste_total"] == 0.0
         assert r["plusvalia_realizada"] == 0.0
 
-
 # ── calcular_plusvalia_latente ────────────────────────────────────────────────
-
 
 class TestCalcularPlusvalia:
     def _posicion(self, cantidad=10, coste=1000.0, plusvalia_realizada=0.0):
@@ -186,9 +179,7 @@ class TestCalcularPlusvalia:
         r = calcular_plusvalia_latente(pos, 100.0)
         assert r["rentabilidad_pct"] == 0.0
 
-
 # ── calcular_resumen_cartera ──────────────────────────────────────────────────
-
 
 class TestCalcularResumen:
     def _pos(
@@ -232,7 +223,9 @@ class TestCalcularResumen:
 
     def test_resumen_sin_precios(self):
         """Sin precio actual, valor_total usa coste_total como fallback."""
-        posiciones = [self._pos(valor_actual=None, coste_total=1000.0, plusvalia_latente=None)]
+        posiciones = [
+            self._pos(valor_actual=None, coste_total=1000.0, plusvalia_latente=None)
+        ]
         r = calcular_resumen_cartera(posiciones)
         assert r["valor_total"] == 1000.0  # fallback a coste_total
         assert r["plusvalia_latente"] == 0.0
@@ -257,9 +250,7 @@ class TestCalcularResumen:
         # rentabilidad = (0+100)/1000 * 100 = 10%
         assert r["rentabilidad_pct"] == pytest.approx(10.0)
 
-
 # ── agrupar_por_campo ─────────────────────────────────────────────────────────
-
 
 class TestAgruparPorCampo:
     def test_agrupacion_basica(self):

@@ -6,7 +6,6 @@ from app.database import get_db
 
 router = APIRouter(prefix="/carteras", tags=["Carteras"])
 
-
 @router.post("", response_model=schemas.CarteraOut)
 def crear_cartera(data: schemas.CarteraCreate, db: Session = Depends(get_db)):
     cartera = models.Cartera(**data.model_dump())
@@ -15,11 +14,9 @@ def crear_cartera(data: schemas.CarteraCreate, db: Session = Depends(get_db)):
     db.refresh(cartera)
     return cartera
 
-
 @router.get("", response_model=list[schemas.CarteraOut])
 def listar_carteras(db: Session = Depends(get_db)):
     return db.query(models.Cartera).all()
-
 
 @router.delete("/{cartera_id}")
 def eliminar_cartera(cartera_id: int, db: Session = Depends(get_db)):

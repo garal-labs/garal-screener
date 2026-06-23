@@ -7,16 +7,23 @@ from app.services import calculos, precios
 
 router = APIRouter(tags=["Movimientos"])
 
-
 @router.post("/movimientos", response_model=schemas.MovimientoOut)
-async def crear_movimiento(data: schemas.MovimientoCreate, db: Session = Depends(get_db)):
+async def crear_movimiento(
+    data: schemas.MovimientoCreate, db: Session = Depends(get_db)
+):
     """Crea un movimiento. Autodescubre el instrumento si no existe."""
-    cartera = db.query(models.Cartera).filter(models.Cartera.id == data.cartera_id).first()
+    cartera = (
+        db.query(models.Cartera).filter(models.Cartera.id == data.cartera_id).first()
+    )
     if not cartera:
         raise HTTPException(status_code=404, detail="Cartera no encontrada")
 
     isin_normalizado = data.isin.strip().upper()
-    instrumento = db.query(models.Instrumento).filter(models.Instrumento.isin == isin_normalizado).first()
+    instrumento = (
+        db.query(models.Instrumento)
+        .filter(models.Instrumento.isin == isin_normalizado)
+        .first()
+    )
     if not instrumento:
         datos = await precios.enriquecer_por_isin(isin_normalizado)
         if not datos:
@@ -71,8 +78,9 @@ async def crear_movimiento(data: schemas.MovimientoCreate, db: Session = Depends
     db.refresh(movimiento)
     return movimiento
 
-
-@router.get("/carteras/{cartera_id}/movimientos", response_model=list[schemas.MovimientoOut])
+@router.get(
+    "/carteras/{cartera_id}/movimientos", response_model=list[schemas.MovimientoOut]
+)
 def listar_movimientos(cartera_id: int, db: Session = Depends(get_db)):
     cartera = db.query(models.Cartera).filter(models.Cartera.id == cartera_id).first()
     if not cartera:
@@ -84,10 +92,13 @@ def listar_movimientos(cartera_id: int, db: Session = Depends(get_db)):
         .all()
     )
 
-
 @router.delete("/movimientos/{movimiento_id}")
 def eliminar_movimiento(movimiento_id: int, db: Session = Depends(get_db)):
-    mov = db.query(models.Movimiento).filter(models.Movimiento.id == movimiento_id).first()
+    mov = (
+        db.query(models.Movimiento)
+        .filter(models.Movimiento.id == movimiento_id)
+        .first()
+    )
     if not mov:
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")
     db.delete(mov)

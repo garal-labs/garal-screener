@@ -24,14 +24,12 @@ engine_test = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine_test)
 
-
 @pytest.fixture(autouse=True)
 def setup_db():
     """Crea y destruye las tablas antes/después de cada test."""
     Base.metadata.create_all(bind=engine_test)
     yield
     Base.metadata.drop_all(bind=engine_test)
-
 
 @pytest.fixture
 def db_session():
@@ -41,7 +39,6 @@ def db_session():
         yield session
     finally:
         session.close()
-
 
 @pytest.fixture
 def client(setup_db):
@@ -55,7 +52,6 @@ def client(setup_db):
             yield db
         finally:
             db.close()
-
     app.dependency_overrides[get_db] = override_get_db
     with patch("main.init_db"):  # evita que el lifespan toque el engine de producción
         with TestClient(app) as c:

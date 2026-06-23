@@ -13,7 +13,6 @@ from app.routers.posiciones import router as posiciones_router
 
 load_dotenv()  # carga .env en local; en Railway las vars vienen del entorno directamente
 
-
 def _allowed_origins() -> list[str]:
     """
     Lee ALLOWED_ORIGINS del entorno.
@@ -25,12 +24,10 @@ def _allowed_origins() -> list[str]:
         return ["*"]
     return [o.strip() for o in raw.split(",") if o.strip()]
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     yield
-
 
 app = FastAPI(
     title="Garal Cartera API",
@@ -51,7 +48,6 @@ app.include_router(carteras_router, prefix="/api/v1")
 app.include_router(instrumentos_router, prefix="/api/v1")
 app.include_router(movimientos_router, prefix="/api/v1")
 app.include_router(posiciones_router, prefix="/api/v1")
-
 
 @app.get("/health")
 def health():

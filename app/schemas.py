@@ -4,11 +4,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # -- Cartera ------------------------------------------------------------------
 
-
 class CarteraCreate(BaseModel):
     nombre: str
     descripcion: str | None = None
-
 
 class CarteraOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -18,9 +16,7 @@ class CarteraOut(BaseModel):
     descripcion: str | None
     created_at: datetime
 
-
 # -- Instrumento --------------------------------------------------------------
-
 
 class InstrumentoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -35,7 +31,6 @@ class InstrumentoOut(BaseModel):
     moneda: str | None = None
     exchange: str | None = None
 
-
 class InstrumentoUpdate(BaseModel):
     """Schema para PATCH /instrumentos/{id} — todos los campos opcionales."""
 
@@ -47,9 +42,7 @@ class InstrumentoUpdate(BaseModel):
     moneda: str | None = None
     exchange: str | None = None
 
-
 # -- Movimiento ---------------------------------------------------------------
-
 
 class MovimientoCreate(BaseModel):
     cartera_id: int
@@ -61,7 +54,6 @@ class MovimientoCreate(BaseModel):
     comision: float | None = Field(default=0.0, ge=0)
     tipo_cambio: float | None = Field(default=None, gt=0)
     notas: str | None = None
-
 
 class MovimientoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -78,9 +70,7 @@ class MovimientoOut(BaseModel):
     notas: str | None
     created_at: datetime
 
-
 # -- Posicion calculada -------------------------------------------------------
-
 
 class PosicionOut(BaseModel):
     instrumento: InstrumentoOut
@@ -94,9 +84,7 @@ class PosicionOut(BaseModel):
     rentabilidad_pct: float | None = None
     plusvalia_total: float | None = None
 
-
 # -- Resumen cartera ----------------------------------------------------------
-
 
 class ResumenCartera(BaseModel):
     cartera: CarteraOut
@@ -109,15 +97,12 @@ class ResumenCartera(BaseModel):
     num_posiciones: int
     posiciones: list[PosicionOut]
 
-
 # -- Analisis / agrupaciones --------------------------------------------------
-
 
 class GrupoAnalisis(BaseModel):
     nombre: str
     valor: float
     peso_pct: float
-
 
 class AnalisisCartera(BaseModel):
     por_sector: list[GrupoAnalisis]

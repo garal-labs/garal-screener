@@ -7,7 +7,6 @@ from app.services import calculos, precios
 
 router = APIRouter(prefix="/carteras", tags=["Posiciones"])
 
-
 @router.get("/{cartera_id}/resumen", response_model=schemas.ResumenCartera)
 async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
     """Posiciones con rentabilidades calculadas en tiempo real via FMP."""
@@ -16,7 +15,11 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Cartera no encontrada")
 
     instrumentos = (
-        db.query(models.Instrumento).join(models.Movimiento).filter(models.Movimiento.cartera_id == cartera_id).distinct().all()
+        db.query(models.Instrumento)
+        .join(models.Movimiento)
+        .filter(models.Movimiento.cartera_id == cartera_id)
+        .distinct()
+        .all()
     )
 
     tickers = [str(i.ticker) for i in instrumentos if i.ticker]
@@ -42,11 +45,17 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
             plusvalia_realizada_cerradas += posicion_fifo["plusvalia_realizada"]
             continue
 
-        precio_actual = precios_actuales.get(str(instrumento.ticker)) if instrumento.ticker else None
+        precio_actual = (
+            precios_actuales.get(str(instrumento.ticker))
+            if instrumento.ticker
+            else None
+        )
 
         plusvalias = {}
         if precio_actual is not None:
-            plusvalias = calculos.calcular_plusvalia_latente(posicion_fifo, precio_actual)
+            plusvalias = calculos.calcular_plusvalia_latente(
+                posicion_fifo, precio_actual
+            )
 
         posiciones_out.append(
             schemas.PosicionOut(
@@ -63,17 +72,22 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
             )
         )
 
-    resumen = calculos.calcular_resumen_cartera([p.model_dump() for p in posiciones_out])
+    resumen = calculos.calcular_resumen_cartera(
+        [p.model_dump() for p in posiciones_out]
+    )
     # Sumar la plusvalía realizada de posiciones cerradas que no aparecen en posiciones_out
-    resumen["plusvalia_realizada"] = round(resumen["plusvalia_realizada"] + plusvalia_realizada_cerradas, 2)
-    resumen["plusvalia_total"] = round(resumen["plusvalia_latente"] + resumen["plusvalia_realizada"], 2)
+    resumen["plusvalia_realizada"] = round(
+        resumen["plusvalia_realizada"] + plusvalia_realizada_cerradas, 2
+    )
+    resumen["plusvalia_total"] = round(
+        resumen["plusvalia_latente"] + resumen["plusvalia_realizada"], 2
+    )
 
     return schemas.ResumenCartera(
         cartera=schemas.CarteraOut.model_validate(cartera),
         posiciones=posiciones_out,
         **resumen,
     )
-
 
 @router.get("/{cartera_id}/analisis", response_model=schemas.AnalisisCartera)
 async def analisis_cartera(cartera_id: int, db: Session = Depends(get_db)):
@@ -95,8 +109,20 @@ async def analisis_cartera(cartera_id: int, db: Session = Depends(get_db)):
         )
 
     return schemas.AnalisisCartera(
-        por_sector=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "sector")],
-        por_pais=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "pais")],
-        por_tipo=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "tipo")],
-        por_moneda=[schemas.GrupoAnalisis(**g) for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "moneda")],
+        por_sector=[
+            schemas.GrupoAnalisis(**g)
+            for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "sector")
+        ],
+        por_pais=[
+            schemas.GrupoAnalisis(**g)
+            for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "pais")
+        ],
+        por_tipo=[
+            schemas.GrupoAnalisis(**g)
+            for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "tipo")
+        ],
+        por_moneda=[
+            schemas.GrupoAnalisis(**g)
+            for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "moneda")
+        ],
     )

@@ -8,10 +8,8 @@ from typing import Any
 
 from app.models import Movimiento
 
-
 class VentaInvalidaError(ValueError):
     """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
-
 
 def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
     """
@@ -37,7 +35,13 @@ def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
         if movimientos_ordenados.tipo == "compra":
             # Añadimos lote: precio unitario incluyendo comisión prorrateada
             precio_unitario = precio_eur + (comision / movimientos_ordenados.cantidad)
-            lotes.append([movimientos_ordenados.cantidad, precio_unitario, movimientos_ordenados.fecha])
+            lotes.append(
+                [
+                    movimientos_ordenados.cantidad,
+                    precio_unitario,
+                    movimientos_ordenados.fecha,
+                ]
+            )
 
         elif movimientos_ordenados.tipo == "venta":
             cantidad_vender = movimientos_ordenados.cantidad
@@ -122,9 +126,10 @@ def calcular_plusvalia_latente(posicion: dict, precio_actual_eur: float) -> dict
         "valor_actual": valor_actual,
         "plusvalia_latente": plusvalia_latente,
         "rentabilidad_pct": rentabilidad_pct,
-        "plusvalia_total": round(plusvalia_latente + posicion["plusvalia_realizada"], 2),
+        "plusvalia_total": round(
+            plusvalia_latente + posicion["plusvalia_realizada"], 2
+        ),
     }
-
 
 def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
     """
@@ -132,13 +137,17 @@ def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
     Cada posición debe tener: valor_actual, coste_total, plusvalia_latente,
     plusvalia_realizada, rentabilidad_pct.
     """
-    valor_total = sum(p.get("valor_actual") or p.get("coste_total") or 0 for p in posiciones)
+    valor_total = sum(
+        p.get("valor_actual") or p.get("coste_total") or 0 for p in posiciones
+    )
     coste_total = sum(p.get("coste_total", 0) for p in posiciones)
     plusvalia_latente = sum(p.get("plusvalia_latente") or 0 for p in posiciones)
     plusvalia_realizada = sum(p.get("plusvalia_realizada", 0) for p in posiciones)
     plusvalia_total = plusvalia_latente + plusvalia_realizada
     # Rentabilidad sobre coste total (latente + realizada)
-    rentabilidad_total_pct = round((plusvalia_total / coste_total * 100), 2) if coste_total > 0 else 0.0
+    rentabilidad_total_pct = (
+        round((plusvalia_total / coste_total * 100), 2) if coste_total > 0 else 0.0
+    )
 
     return {
         "valor_total": round(valor_total, 2),
@@ -147,9 +156,10 @@ def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
         "plusvalia_realizada": round(plusvalia_realizada, 2),
         "plusvalia_total": round(plusvalia_total, 2),
         "rentabilidad_pct": rentabilidad_total_pct,
-        "num_posiciones": len([p for p in posiciones if p.get("cantidad_actual", 0) > 0]),
+        "num_posiciones": len(
+            [p for p in posiciones if p.get("cantidad_actual", 0) > 0]
+        ),
     }
-
 
 def agrupar_por_campo(posiciones: list[dict], campo: str) -> list[dict]:
     """
@@ -177,11 +187,4 @@ def agrupar_por_campo(posiciones: list[dict], campo: str) -> list[dict]:
     ]
     return sorted(resultado, key=lambda x: x["valor"], reverse=True)
 
-
 # ── Helpers privados ──────────────────────────────────────────────────────────
-
-
-
-
-
-
