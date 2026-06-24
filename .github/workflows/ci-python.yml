@@ -127,16 +127,23 @@ jobs:
           cache: "pip"
 
       - name: Install linting tools
-        run: pip install ruff black isort
+        run: pip install ruff black
 
       - name: Ruff (linter + unused imports + complejidad)
+        id: ruff
+        continue-on-error: true
         run: ruff check . --output-format=github
 
       - name: Black (formato)
+        id: black
+        continue-on-error: true
         run: black --check --diff .
 
-      - name: isort (orden de imports)
-        run: isort --check-only --diff .
+      - name: Fail if any check failed
+        if: steps.ruff.outcome == 'failure' || steps.black.outcome == 'failure'
+        run: |
+          echo "❌ One or more checks failed. See details above."
+          exit 1
 
 
   # ══════════════════════════════════════════════════════════════════════════

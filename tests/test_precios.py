@@ -27,7 +27,9 @@ def mock_httpx_response(json_data, status_code=200):
     if status_code >= 400:
         import httpx
 
-        response.raise_for_status.side_effect = httpx.HTTPStatusError("error", request=MagicMock(), response=response)
+        response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "error", request=MagicMock(), response=response
+        )
     return response
 
 
@@ -75,7 +77,9 @@ class TestObtenerPreciosBatch:
         def fake_yfinance(ticker):
             return perfiles.get(ticker)
 
-        with patch("app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance):
+        with patch(
+            "app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance
+        ):
             result = await obtener_precios_batch(["AAPL", "MSFT"])
         assert result == {"AAPL": 150.0, "MSFT": 300.0}
 
@@ -97,7 +101,9 @@ class TestObtenerPreciosBatch:
         def fake_yfinance(ticker):
             return perfiles.get(ticker)
 
-        with patch("app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance):
+        with patch(
+            "app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance
+        ):
             result = await obtener_precios_batch(["NVDA", "UNKNOWN"])
         assert result == {"NVDA": 500.0}
 
@@ -113,7 +119,9 @@ class TestObtenerPreciosBatch:
                 raise RuntimeError("network error")
             return {"precio": 100.0}
 
-        with patch("app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance):
+        with patch(
+            "app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance
+        ):
             result = await obtener_precios_batch(["AAPL", "BAD"])
         assert "AAPL" in result
         assert "BAD" not in result
@@ -129,7 +137,9 @@ class TestBuscarTickerPorIsin:
         data = [{"data": [{"ticker": "SAN", "exchCode": "SM"}]}]
         resp = mock_httpx_response(data)
         with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=resp)))
+            mock_client.return_value.__aenter__ = AsyncMock(
+                return_value=MagicMock(post=AsyncMock(return_value=resp))
+            )
             mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
             ticker = await buscar_ticker_por_isin("ES0113900J37")
         assert ticker == "SAN.MC"
@@ -140,7 +150,9 @@ class TestBuscarTickerPorIsin:
         data = [{}]
         resp = mock_httpx_response(data)
         with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(return_value=MagicMock(post=AsyncMock(return_value=resp)))
+            mock_client.return_value.__aenter__ = AsyncMock(
+                return_value=MagicMock(post=AsyncMock(return_value=resp))
+            )
             mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
             ticker = await buscar_ticker_por_isin("XX0000000000")
         assert ticker is None
@@ -148,7 +160,9 @@ class TestBuscarTickerPorIsin:
     @pytest.mark.asyncio
     async def test_error_devuelve_none(self):
         with patch("httpx.AsyncClient") as mock_client:
-            mock_client.return_value.__aenter__ = AsyncMock(side_effect=Exception("network"))
+            mock_client.return_value.__aenter__ = AsyncMock(
+                side_effect=Exception("network")
+            )
             mock_client.return_value.__aexit__ = AsyncMock(return_value=False)
             ticker = await buscar_ticker_por_isin("XX0000000000")
         assert ticker is None

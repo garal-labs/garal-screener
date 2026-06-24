@@ -4,6 +4,7 @@ Todos los tests usan SQLite en memoria (ver conftest.py).
 Las llamadas externas (FMP, Anthropic) se mockean.
 """
 
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -68,12 +69,23 @@ MOCK_IA = {
 
 
 def mock_precios():
-    """Contexto que parchea las llamadas externas de precios/yfinance."""
-    return patch.multiple(
-        "app.routers.api.precios",
-        enriquecer_por_isin=AsyncMock(return_value={**MOCK_IA, "ticker": "AAPL"}),
-        obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
+    """Contexto que parchea las llamadas externas de precios/yfinance.
+    Tras la separación de api.py, precios se usa en movimientos.py y posiciones.py.
+    """
+    stack = ExitStack()
+    stack.enter_context(
+        patch.multiple(
+            "app.routers.movimientos.precios",
+            enriquecer_por_isin=AsyncMock(return_value={**MOCK_IA, "ticker": "AAPL"}),
+        )
     )
+    stack.enter_context(
+        patch.multiple(
+            "app.routers.posiciones.precios",
+            obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
+        )
+    )
+    return stack
 
 
 class TestMovimientos:
@@ -268,7 +280,9 @@ class TestMovimientos:
 
 class TestResumenCartera:
     def _setup_cartera_con_compra(self, client):
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()[
+            "id"
+        ]
         with mock_precios():
             client.post(
                 f"{BASE}/movimientos",
@@ -300,7 +314,9 @@ class TestResumenCartera:
 
     def test_resumen_posicion_cerrada_no_pierde_plusvalia(self, client):
         """P/L realizada de posiciones cerradas debe aparecer en el resumen."""
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()[
+            "id"
+        ]
         with mock_precios():
             # Compra y venta total → posición cerrada
             client.post(
@@ -339,7 +355,9 @@ class TestResumenCartera:
 
 class TestInstrumentos:
     def test_patch_instrumento(self, client):
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()[
+            "id"
+        ]
         with mock_precios():
             mov = client.post(
                 f"{BASE}/movimientos",
@@ -370,7 +388,9 @@ class TestInstrumentos:
         assert r.status_code == 404
 
     def test_listar_instrumentos(self, client):
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()["id"]
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()[
+            "id"
+        ]
         with mock_precios():
             client.post(
                 f"{BASE}/movimientos",

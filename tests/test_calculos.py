@@ -48,7 +48,6 @@ D1 = date(2024, 1, 1)
 D2 = date(2024, 2, 1)
 D3 = date(2024, 3, 1)
 
-
 # ── calcular_posicion_fifo ────────────────────────────────────────────────────
 
 
@@ -232,7 +231,9 @@ class TestCalcularResumen:
 
     def test_resumen_sin_precios(self):
         """Sin precio actual, valor_total usa coste_total como fallback."""
-        posiciones = [self._pos(valor_actual=None, coste_total=1000.0, plusvalia_latente=None)]
+        posiciones = [
+            self._pos(valor_actual=None, coste_total=1000.0, plusvalia_latente=None)
+        ]
         r = calcular_resumen_cartera(posiciones)
         assert r["valor_total"] == 1000.0  # fallback a coste_total
         assert r["plusvalia_latente"] == 0.0
