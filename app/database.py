@@ -19,6 +19,7 @@ engine = create_engine(DATABASE_URL, connect_args=connect_args)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
 def get_db():
     """Dependency de FastAPI: provee una sesión y la cierra al terminar."""
     db: Session = SessionLocal()
@@ -26,6 +27,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 def init_db():
     """Crea todas las tablas si no existen (útil en desarrollo/SQLite)."""

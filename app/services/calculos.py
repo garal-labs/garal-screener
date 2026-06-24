@@ -12,6 +12,7 @@ from app.models import Movimiento
 class VentaInvalidaError(ValueError):
     """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
 
+
 def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
     """
     Dado una lista de movimientos ordenados por fecha ASC,
@@ -98,11 +99,13 @@ def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
         ],
     }
 
+
 def _precio_en_eur(mov) -> float:
     """
     Convierte el precio del movimiento a EUR aplicando tipo de cambio.
     """
     return float(mov.precio) * _tipo_cambio(mov)
+
 
 def _tipo_cambio(mov) -> float:
     """
@@ -111,6 +114,7 @@ def _tipo_cambio(mov) -> float:
     """
     # is not None para no confundir tipo_cambio=0.0 (inválido) con ausente
     return float(mov.tipo_cambio) if mov.tipo_cambio is not None else 1.0
+
 
 def calcular_plusvalia_latente(posicion: dict, precio_actual_eur: float) -> dict:
     """
@@ -131,6 +135,7 @@ def calcular_plusvalia_latente(posicion: dict, precio_actual_eur: float) -> dict
             plusvalia_latente + posicion["plusvalia_realizada"], 2
         ),
     }
+
 
 def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
     """
@@ -162,6 +167,7 @@ def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
         ),
     }
 
+
 def agrupar_por_campo(posiciones: list[dict], campo: str) -> list[dict]:
     """
     Agrupa posiciones por sector, país, tipo, etc.
@@ -187,5 +193,6 @@ def agrupar_por_campo(posiciones: list[dict], campo: str) -> list[dict]:
         for k, v in grupos.items()
     ]
     return sorted(resultado, key=lambda x: x["valor"], reverse=True)
+
 
 # ── Helpers privados ──────────────────────────────────────────────────────────

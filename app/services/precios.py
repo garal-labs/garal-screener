@@ -35,6 +35,7 @@ _ISIN_EXCHANGE_MAP = {
     "LU": ("NA", ".AS"),  # ETFs luxemburgueses → Euronext Amsterdam
 }
 
+
 async def enriquecer_por_isin(isin: str) -> dict | None:
     """
     Resuelve ISIN → metadatos completos con estrategia en cascada:
@@ -87,6 +88,7 @@ async def enriquecer_por_isin(isin: str) -> dict | None:
     )
     return None
 
+
 async def _buscar_ticker_en_openfigi(isin: str) -> str | None:
     """
     Resuelve ISIN → ticker via OpenFIGI (gratuito, sin API key).
@@ -126,6 +128,7 @@ async def _buscar_ticker_en_openfigi(isin: str) -> str | None:
         print(f"[OpenFIGI] Error resolviendo ISIN {isin}: {e}")
         return None
 
+
 async def _buscar_tickers_en_yahoo(isin: str) -> list[str]:
     """
     Busca todos los tickers candidatos en Yahoo Finance por ISIN.
@@ -145,6 +148,7 @@ async def _buscar_tickers_en_yahoo(isin: str) -> list[str]:
     except Exception as e:
         print(f"[Yahoo Search] Error buscando ISIN {isin}: {e}")
         return []
+
 
 def _obtener_info_yfinance(ticker: str) -> dict | None:
     """
@@ -185,6 +189,7 @@ def _obtener_info_yfinance(ticker: str) -> dict | None:
         print(f"[yfinance] Error obteniendo info de {ticker}: {e}")
         return None
 
+
 def _tipo_desde_quote_type(quote_type: str) -> str:
     mapping = {
         "EQUITY": "accion",
@@ -192,6 +197,7 @@ def _tipo_desde_quote_type(quote_type: str) -> str:
         "MUTUALFUND": "fondo",
     }
     return mapping.get((quote_type or "").upper(), "otro")
+
 
 async def obtener_precios_batch(tickers: list[str]) -> dict[str, float]:
     """Obtiene precios de múltiples tickers en paralelo via yfinance."""
@@ -208,6 +214,7 @@ async def obtener_precios_batch(tickers: list[str]) -> dict[str, float]:
         if isinstance(precio, float)
     }  # noqa: B905
 
+
 async def _obtener_precio_actual(ticker: str) -> float | None:
     """Obtiene el precio actual de un ticker via yfinance."""
     if not ticker:
@@ -216,11 +223,14 @@ async def _obtener_precio_actual(ticker: str) -> float | None:
     perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
     return perfil.get("precio") if perfil else None
 
+
 # ── Public aliases (backwards-compatible API) ─────────────────────────────────
+
 
 async def buscar_ticker_por_isin(isin: str) -> str | None:
     """Public alias for _buscar_ticker_en_openfigi."""
     return await _buscar_ticker_en_openfigi(isin)
+
 
 async def obtener_precio_actual(ticker: str) -> float | None:
     """Public alias for _obtener_precio_actual."""

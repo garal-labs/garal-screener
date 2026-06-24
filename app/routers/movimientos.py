@@ -7,6 +7,7 @@ from app.services import calculos, precios
 
 router = APIRouter(tags=["Movimientos"])
 
+
 @router.post("/movimientos", response_model=schemas.MovimientoOut)
 async def crear_movimiento(
     data: schemas.MovimientoCreate, db: Session = Depends(get_db)
@@ -78,6 +79,7 @@ async def crear_movimiento(
     db.refresh(movimiento)
     return movimiento
 
+
 @router.get(
     "/carteras/{cartera_id}/movimientos", response_model=list[schemas.MovimientoOut]
 )
@@ -91,6 +93,7 @@ def listar_movimientos(cartera_id: int, db: Session = Depends(get_db)):
         .order_by(models.Movimiento.fecha.desc())
         .all()
     )
+
 
 @router.delete("/movimientos/{movimiento_id}")
 def eliminar_movimiento(movimiento_id: int, db: Session = Depends(get_db)):

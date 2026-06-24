@@ -13,6 +13,7 @@ BASE = "/api/v1"
 
 # ── Carteras ──────────────────────────────────────────────────────────────────
 
+
 class TestCarteras:
     def test_crear_cartera(self, client):
         r = client.post(f"{BASE}/carteras", json={"nombre": "Mi cartera"})
@@ -54,6 +55,7 @@ class TestCarteras:
         r = client.delete(f"{BASE}/carteras/9999")
         assert r.status_code == 404
 
+
 # ── Movimientos ───────────────────────────────────────────────────────────────
 
 MOCK_IA = {
@@ -64,6 +66,7 @@ MOCK_IA = {
     "moneda": "USD",
     "exchange": "NASDAQ",
 }
+
 
 def mock_precios():
     """Contexto que parchea las llamadas externas de precios/yfinance.
@@ -83,6 +86,7 @@ def mock_precios():
         )
     )
     return stack
+
 
 class TestMovimientos:
     def _cartera_id(self, client):
@@ -270,7 +274,9 @@ class TestMovimientos:
         )
         assert r.status_code == 422
 
+
 # ── Resumen de cartera ────────────────────────────────────────────────────────
+
 
 class TestResumenCartera:
     def _setup_cartera_con_compra(self, client):
@@ -343,7 +349,9 @@ class TestResumenCartera:
         # Pero la plusvalía realizada sí debe estar: 10*(120-100) = 200
         assert data["plusvalia_realizada"] == pytest.approx(200.0, abs=0.01)
 
+
 # ── Instrumentos ──────────────────────────────────────────────────────────────
+
 
 class TestInstrumentos:
     def test_patch_instrumento(self, client):
@@ -399,7 +407,9 @@ class TestInstrumentos:
         assert r.status_code == 200
         assert len(r.json()) == 1
 
+
 # ── Health check ──────────────────────────────────────────────────────────────
+
 
 def test_health(client):
     r = client.get("/health")

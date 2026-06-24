@@ -7,6 +7,7 @@ from app.services import calculos, precios
 
 router = APIRouter(prefix="/carteras", tags=["Posiciones"])
 
+
 @router.get("/{cartera_id}/resumen", response_model=schemas.ResumenCartera)
 async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
     """Posiciones con rentabilidades calculadas en tiempo real via FMP."""
@@ -88,6 +89,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
         posiciones=posiciones_out,
         **resumen,
     )
+
 
 @router.get("/{cartera_id}/analisis", response_model=schemas.AnalisisCartera)
 async def analisis_cartera(cartera_id: int, db: Session = Depends(get_db)):

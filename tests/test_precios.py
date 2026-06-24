@@ -17,6 +17,7 @@ from app.services.precios import (
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def mock_httpx_response(json_data, status_code=200):
     """Construye un mock de httpx.Response."""
     response = MagicMock()
@@ -31,7 +32,9 @@ def mock_httpx_response(json_data, status_code=200):
         )
     return response
 
+
 # ── obtener_precio_actual ─────────────────────────────────────────────────────
+
 
 class TestObtenerPrecioActual:
     @pytest.mark.asyncio
@@ -59,7 +62,9 @@ class TestObtenerPrecioActual:
             precio = await obtener_precio_actual("AAPL")
         assert precio is None
 
+
 # ── obtener_precios_batch ─────────────────────────────────────────────────────
+
 
 class TestObtenerPreciosBatch:
     @pytest.mark.asyncio
@@ -71,6 +76,7 @@ class TestObtenerPreciosBatch:
 
         def fake_yfinance(ticker):
             return perfiles.get(ticker)
+
         with patch(
             "app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance
         ):
@@ -94,6 +100,7 @@ class TestObtenerPreciosBatch:
 
         def fake_yfinance(ticker):
             return perfiles.get(ticker)
+
         with patch(
             "app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance
         ):
@@ -111,6 +118,7 @@ class TestObtenerPreciosBatch:
             if ticker == "BAD":
                 raise RuntimeError("network error")
             return {"precio": 100.0}
+
         with patch(
             "app.services.precios._obtener_info_yfinance", side_effect=fake_yfinance
         ):
@@ -118,7 +126,9 @@ class TestObtenerPreciosBatch:
         assert "AAPL" in result
         assert "BAD" not in result
 
+
 # ── buscar_ticker_por_isin ────────────────────────────────────────────────────
+
 
 class TestBuscarTickerPorIsin:
     @pytest.mark.asyncio

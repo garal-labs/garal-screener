@@ -7,6 +7,7 @@ from app.services import precios
 
 router = APIRouter(prefix="/instrumentos", tags=["Instrumentos"])
 
+
 @router.get("/autodescubrir/{isin}", response_model=schemas.InstrumentoOut)
 async def autodescubrir(isin: str, db: Session = Depends(get_db)):
     """Busca o crea un instrumento por ISIN usando Gemini para metadatos."""
@@ -39,9 +40,11 @@ async def autodescubrir(isin: str, db: Session = Depends(get_db)):
     db.refresh(instrumento)
     return instrumento
 
+
 @router.get("", response_model=list[schemas.InstrumentoOut])
 def listar_instrumentos(db: Session = Depends(get_db)):
     return db.query(models.Instrumento).all()
+
 
 @router.patch("/{instrumento_id}", response_model=schemas.InstrumentoOut)
 def actualizar_instrumento(
@@ -63,11 +66,13 @@ def actualizar_instrumento(
     db.refresh(instrumento)
     return instrumento
 
+
 @router.delete("")
 def eliminar_todos_instrumentos(db: Session = Depends(get_db)):
     db.query(models.Instrumento).delete()
     db.commit()
     return {"ok": True}
+
 
 @router.delete("/{instrumento_id}")
 def eliminar_instrumento(instrumento_id: int, db: Session = Depends(get_db)):

@@ -8,6 +8,7 @@ Base = declarative_base()
 TIPOS_MOVIMIENTO = {"compra", "venta"}
 TIPOS_INSTRUMENTO = {"accion", "etf", "fondo", "otro"}
 
+
 class Cartera(Base):
     __tablename__ = "carteras"
 
@@ -20,6 +21,7 @@ class Cartera(Base):
     movimientos: Mapped[list["Movimiento"]] = relationship(
         "Movimiento", back_populates="cartera", cascade="all, delete-orphan"
     )
+
 
 class Instrumento(Base):
     __tablename__ = "instrumentos"
@@ -40,6 +42,7 @@ class Instrumento(Base):
     movimientos: Mapped[list["Movimiento"]] = relationship(
         "Movimiento", back_populates="instrumento"
     )
+
 
 class Movimiento(Base):
     __tablename__ = "movimientos"
