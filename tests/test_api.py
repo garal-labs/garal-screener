@@ -68,10 +68,16 @@ MOCK_IA = {
 }
 
 
-def mock_precios():
+def mock_precios(fx_rates=None):
     """Contexto que parchea las llamadas externas de precios/yfinance.
-    Tras la separación de api.py, precios se usa en movimientos.py y posiciones.py.
+
+    Args:
+        fx_rates: dict opcional con tipos de cambio a simular, ej. {"USD": 1.085}.
+            Por defecto {} → fx fallback 1.0 para todas las monedas (comportamiento anterior).
     """
+    if fx_rates is None:
+        fx_rates = {}
+
     stack = ExitStack()
     stack.enter_context(
         patch.multiple(
@@ -83,6 +89,8 @@ def mock_precios():
         patch.multiple(
             "app.routers.posiciones.precios",
             obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
+            obtener_fx_batch=AsyncMock(return_value=fx_rates),
+            obtener_fx_historico=AsyncMock(return_value=1.085),
         )
     )
     return stack
@@ -406,6 +414,162 @@ class TestInstrumentos:
         r = client.get(f"{BASE}/instrumentos")
         assert r.status_code == 200
         assert len(r.json()) == 1
+
+
+# ── Backfill FX ───────────────────────────────────────────────────────────────
+
+
+class TestBackfillFx:
+    def _setup(self, client):
+        """Crea cartera con un movimiento USD sin tipo_cambio."""
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "FX Test"}).json()["id"]
+        with mock_precios():
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 150.0,
+                    # sin tipo_cambio → queda en NULL
+                },
+            )
+        return cartera_id
+
+    def test_backfill_actualiza_movimientos_usd(self, client):
+        cartera_id = self._setup(client)
+        with mock_precios():
+            r = client.post(f"{BASE}/carteras/{cartera_id}/backfill-fx")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["actualizados"] == 1
+        assert data["omitidos"] == 0
+
+    def test_backfill_cartera_inexistente_retorna_404(self, client):
+        r = client.post(f"{BASE}/carteras/9999/backfill-fx")
+        assert r.status_code == 404
+
+    def test_backfill_no_toca_movimientos_eur(self, client):
+        """Movimientos de instrumentos EUR no deben modificarse."""
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "EUR Test"}).json()["id"]
+        mock_eur = {**MOCK_IA, "moneda": "EUR", "ticker": "SAN"}
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.multiple(
+                    "app.routers.movimientos.precios",
+                    enriquecer_por_isin=AsyncMock(return_value=mock_eur),
+                )
+            )
+            stack.enter_context(
+                patch.multiple(
+                    "app.routers.posiciones.precios",
+                    obtener_precios_batch=AsyncMock(return_value={"SAN": 4.0}),
+                    obtener_fx_batch=AsyncMock(return_value={}),
+                    obtener_fx_historico=AsyncMock(return_value=1.085),
+                )
+            )
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "ES0113900J37",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 100,
+                    "precio": 3.5,
+                },
+            )
+            r = client.post(f"{BASE}/carteras/{cartera_id}/backfill-fx")
+        assert r.status_code == 200
+        data = r.json()
+        # No hay movimientos USD/no-EUR → nada que actualizar
+        assert data["actualizados"] == 0
+        assert data["omitidos"] == 0
+
+    def test_backfill_omite_cuando_yfinance_sin_datos(self, client):
+        cartera_id = self._setup(client)
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.multiple(
+                    "app.routers.posiciones.precios",
+                    obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
+                    obtener_fx_batch=AsyncMock(return_value={}),
+                    obtener_fx_historico=AsyncMock(return_value=None),  # sin datos
+                )
+            )
+            r = client.post(f"{BASE}/carteras/{cartera_id}/backfill-fx")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["actualizados"] == 0
+        assert data["omitidos"] == 1
+
+
+# ── Dual-currency en resumen ──────────────────────────────────────────────────
+
+
+class TestResumenDualCurrency:
+    def _setup_usd(self, client, fx_rates=None):
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "USD Test"}).json()["id"]
+        with mock_precios(fx_rates=fx_rates or {}):
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": "2024-01-15",
+                    "cantidad": 10,
+                    "precio": 150.0,
+                    "tipo_cambio": 1.10,
+                },
+            )
+        return cartera_id
+
+    def test_resumen_incluye_campos_dual_currency(self, client):
+        cartera_id = self._setup_usd(client, fx_rates={"USD": 1.05})
+        with mock_precios(fx_rates={"USD": 1.05}):
+            r = client.get(f"{BASE}/carteras/{cartera_id}/resumen")
+        assert r.status_code == 200
+        pos = r.json()["posiciones"][0]
+        assert "valor_actual_eur" in pos
+        assert "valor_actual_nativo" in pos
+        assert "moneda_nativa" in pos
+        assert "fx_actual" in pos
+
+    def test_moneda_nativa_correcta(self, client):
+        cartera_id = self._setup_usd(client, fx_rates={"USD": 1.05})
+        with mock_precios(fx_rates={"USD": 1.05}):
+            r = client.get(f"{BASE}/carteras/{cartera_id}/resumen")
+        pos = r.json()["posiciones"][0]
+        assert pos["moneda_nativa"] == "USD"
+
+    def test_valor_actual_es_alias_de_valor_actual_eur(self, client):
+        """valor_actual debe ser igual a valor_actual_eur (backwards-compat)."""
+        cartera_id = self._setup_usd(client, fx_rates={"USD": 1.05})
+        with mock_precios(fx_rates={"USD": 1.05}):
+            r = client.get(f"{BASE}/carteras/{cartera_id}/resumen")
+        pos = r.json()["posiciones"][0]
+        assert pos["valor_actual"] == pos["valor_actual_eur"]
+
+    def test_valor_actual_nativo_en_moneda_nativa(self, client):
+        """valor_actual_nativo = precio_actual * cantidad (sin conversión FX)."""
+        cartera_id = self._setup_usd(client, fx_rates={"USD": 1.05})
+        with mock_precios(fx_rates={"USD": 1.05}):
+            r = client.get(f"{BASE}/carteras/{cartera_id}/resumen")
+        pos = r.json()["posiciones"][0]
+        # precio mock = 150, cantidad = 10 → 1500 USD
+        assert pos["valor_actual_nativo"] == pytest.approx(1500.0)
+
+    def test_valor_actual_eur_aplica_fx(self, client):
+        """valor_actual_eur = precio_nativo / fx * cantidad."""
+        cartera_id = self._setup_usd(client, fx_rates={"USD": 1.05})
+        with mock_precios(fx_rates={"USD": 1.05}):
+            r = client.get(f"{BASE}/carteras/{cartera_id}/resumen")
+        pos = r.json()["posiciones"][0]
+        # precio mock=150, fx=1.05, cantidad=10 → 150/1.05*10 ≈ 1428.57
+        assert pos["valor_actual_eur"] == pytest.approx(150.0 / 1.05 * 10, abs=0.01)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
