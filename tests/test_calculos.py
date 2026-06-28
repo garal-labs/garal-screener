@@ -161,14 +161,16 @@ class TestCalcularPlusvalia:
             "plusvalia_realizada": plusvalia_realizada,
         }
 
-    def test_ganancia(self):
+    # ── Backwards-compatibility (sin fx_actual) ───────────────────────────────
+
+    def test_ganancia_eur(self):
         pos = self._posicion(10, 1000.0)
         r = calcular_plusvalia_latente(pos, 120.0)
         assert r["valor_actual"] == 1200.0
         assert r["plusvalia_latente"] == 200.0
         assert r["rentabilidad_pct"] == pytest.approx(20.0)
 
-    def test_perdida(self):
+    def test_perdida_eur(self):
         pos = self._posicion(10, 1000.0)
         r = calcular_plusvalia_latente(pos, 80.0)
         assert r["plusvalia_latente"] == -200.0
@@ -176,14 +178,61 @@ class TestCalcularPlusvalia:
 
     def test_plusvalia_total_incluye_realizada(self):
         pos = self._posicion(10, 1000.0, plusvalia_realizada=50.0)
-        r = calcular_plusvalia_latente(pos, 100.0)  # sin ganancia latente
-        # plusvalia_total = latente(0) + realizada(50) = 50
+        r = calcular_plusvalia_latente(pos, 100.0)
         assert r["plusvalia_total"] == pytest.approx(50.0)
 
     def test_coste_cero_no_divide_por_cero(self):
         pos = self._posicion(0, 0.0)
         r = calcular_plusvalia_latente(pos, 100.0)
         assert r["rentabilidad_pct"] == 0.0
+
+    def test_valor_actual_es_alias_de_valor_actual_eur(self):
+        """valor_actual debe ser igual a valor_actual_eur (backwards-compat)."""
+        pos = self._posicion(10, 1000.0)
+        r = calcular_plusvalia_latente(pos, 120.0)
+        assert r["valor_actual"] == r["valor_actual_eur"]
+
+    # ── Dual-currency con fx_actual ───────────────────────────────────────────
+
+    def test_usd_conversión_correcta(self):
+        """
+        Compra: 10 acciones a $150, tipo_cambio histórico 1.10 → coste = 10*150/1.10 = €1363.64
+        Precio actual: $180, fx_actual (EURUSD=X) = 1.05
+        valor_actual_eur = 10*180/1.05 = €1714.29
+        valor_actual_nativo = 10*180 = $1800
+        """
+        # coste_total ya en EUR (calculado por FIFO con tipo_cambio histórico)
+        pos = self._posicion(cantidad=10, coste=round(10 * 150 / 1.10, 2))
+        r = calcular_plusvalia_latente(pos, precio_actual_nativo=180.0, fx_actual=1.05)
+
+        assert r["valor_actual_nativo"] == pytest.approx(1800.0)
+        assert r["valor_actual_eur"] == pytest.approx(1714.29, abs=0.01)
+        assert r["plusvalia_latente"] == pytest.approx(1714.29 - round(10 * 150 / 1.10, 2), abs=0.01)
+        assert r["rentabilidad_pct"] == pytest.approx(
+            (r["plusvalia_latente"] / pos["coste_total"]) * 100, abs=0.01
+        )
+
+    def test_eur_fx_1_valor_nativo_igual_eur(self):
+        """Para EUR: fx_actual=1.0 → valor_actual_nativo == valor_actual_eur."""
+        pos = self._posicion(10, 1000.0)
+        r = calcular_plusvalia_latente(pos, precio_actual_nativo=120.0, fx_actual=1.0)
+        assert r["valor_actual_nativo"] == r["valor_actual_eur"]
+        assert r["valor_actual_eur"] == pytest.approx(1200.0)
+
+    def test_fx_alto_reduce_valor_eur(self):
+        """EUR más fuerte (fx alto) reduce el valor en EUR de activo extranjero."""
+        pos = self._posicion(10, 1000.0)
+        r_bajo = calcular_plusvalia_latente(pos, 100.0, fx_actual=1.0)
+        r_alto = calcular_plusvalia_latente(pos, 100.0, fx_actual=1.20)
+        assert r_alto["valor_actual_eur"] < r_bajo["valor_actual_eur"]
+
+    def test_nuevos_campos_presentes(self):
+        """La respuesta debe incluir todos los campos del contrato."""
+        pos = self._posicion(10, 1000.0)
+        r = calcular_plusvalia_latente(pos, 100.0, fx_actual=1.05)
+        for campo in ("valor_actual", "valor_actual_eur", "valor_actual_nativo",
+                      "plusvalia_latente", "rentabilidad_pct", "plusvalia_total"):
+            assert campo in r
 
 
 # ── calcular_resumen_cartera ──────────────────────────────────────────────────

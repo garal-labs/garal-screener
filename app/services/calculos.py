@@ -116,24 +116,44 @@ def _tipo_cambio(mov) -> float:
     return float(mov.tipo_cambio) if mov.tipo_cambio is not None else 1.0
 
 
-def calcular_plusvalia_latente(posicion: dict, precio_actual_eur: float) -> dict:
+def calcular_plusvalia_latente(
+    posicion: dict,
+    precio_actual_nativo: float,
+    fx_actual: float = 1.0,
+) -> dict:
     """
-    Con la posición FIFO calculada y el precio actual de mercado,
-    calcula la plusvalía latente (no realizada).
+    Con la posición FIFO calculada, el precio actual en moneda nativa y el
+    tipo de cambio actual, calcula la plusvalía latente en EUR y moneda nativa.
+
+    Args:
+        posicion: dict devuelto por calcular_posicion_fifo (coste_total en EUR).
+        precio_actual_nativo: precio de mercado en la moneda nativa del instrumento.
+        fx_actual: tipo de cambio EUR/moneda (convenio Yahoo Finance: EURUSD=X).
+            Ej. fx_actual=1.085 significa 1 EUR = 1.085 USD.
+            Para convertir a EUR: precio_nativo / fx_actual.
+            Para EUR puro: fx_actual=1.0 (default, sin conversión).
+
+    Returns:
+        Dict con valor_actual_eur, valor_actual_nativo y métricas en EUR.
+        valor_actual es alias de valor_actual_eur para backwards-compatibility.
     """
     cantidad = posicion["cantidad_actual"]
-    coste = posicion["coste_total"]
-    valor_actual = round(precio_actual_eur * cantidad, 2)
-    plusvalia_latente = round(valor_actual - coste, 2)
+    coste = posicion["coste_total"]  # siempre en EUR (FIFO aplica tipo_cambio histórico)
+
+    valor_actual_nativo = round(precio_actual_nativo * cantidad, 2)
+    # fx_actual=1.0 para EUR → sin conversión; para USD: divide por fx
+    valor_actual_eur = round(precio_actual_nativo / fx_actual * cantidad, 2)
+
+    plusvalia_latente = round(valor_actual_eur - coste, 2)
     rentabilidad_pct = round((plusvalia_latente / coste * 100), 2) if coste > 0 else 0.0
 
     return {
-        "valor_actual": valor_actual,
+        "valor_actual": valor_actual_eur,  # backwards-compat alias
+        "valor_actual_eur": valor_actual_eur,
+        "valor_actual_nativo": valor_actual_nativo,
         "plusvalia_latente": plusvalia_latente,
         "rentabilidad_pct": rentabilidad_pct,
-        "plusvalia_total": round(
-            plusvalia_latente + posicion["plusvalia_realizada"], 2
-        ),
+        "plusvalia_total": round(plusvalia_latente + posicion["plusvalia_realizada"], 2),
     }
 
 
