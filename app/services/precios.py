@@ -236,6 +236,22 @@ async def _obtener_precio_actual(ticker: str) -> float | None:
 # ── FX rate helpers ───────────────────────────────────────────────────────────
 
 
+async def obtener_fx_historico(moneda: str, fecha: date) -> float | None:
+    """
+    Devuelve el tipo de cambio EUR/moneda en una fecha concreta.
+
+    Convenio: EURUSD=X → cuántos USD por 1 EUR (ej. 1.085).
+    Para convertir precio_nativo → EUR: precio_nativo / resultado.
+
+    Devuelve 1.0 para EUR. Devuelve None si yfinance no tiene datos.
+    """
+    if moneda.upper() == "EUR":
+        return 1.0
+    ticker = f"EUR{moneda.upper()}=X"
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _fetch_fx_historico, ticker, fecha)
+
+
 def _fetch_fx_historico(ticker: str, fecha: date) -> float | None:
     """
     Obtiene el tipo de cambio de cierre para un par FX en una fecha concreta.
@@ -253,36 +269,6 @@ def _fetch_fx_historico(ticker: str, fecha: date) -> float | None:
         return None
 
 
-def _fetch_fx_actual(ticker: str) -> float | None:
-    """
-    Obtiene el tipo de cambio actual para un par FX via yfinance.
-    Devuelve None si no hay datos disponibles.
-    """
-    try:
-        info = yf.Ticker(ticker).info
-        price = info.get("regularMarketPrice") or info.get("previousClose")
-        return float(price) if price else None
-    except Exception as e:
-        print(f"[FX actual] Error obteniendo {ticker}: {e}")
-        return None
-
-
-async def obtener_fx_historico(moneda: str, fecha: date) -> float | None:
-    """
-    Devuelve el tipo de cambio EUR/moneda en una fecha concreta.
-
-    Convenio: EURUSD=X → cuántos USD por 1 EUR (ej. 1.085).
-    Para convertir precio_nativo → EUR: precio_nativo / resultado.
-
-    Devuelve 1.0 para EUR. Devuelve None si yfinance no tiene datos.
-    """
-    if moneda.upper() == "EUR":
-        return 1.0
-    ticker = f"EUR{moneda.upper()}=X"
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _fetch_fx_historico, ticker, fecha)
-
-
 async def obtener_fx_actual(moneda: str) -> float | None:
     """
     Devuelve el tipo de cambio EUR/moneda actual.
@@ -297,6 +283,20 @@ async def obtener_fx_actual(moneda: str) -> float | None:
     ticker = f"EUR{moneda.upper()}=X"
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _fetch_fx_actual, ticker)
+
+
+def _fetch_fx_actual(ticker: str) -> float | None:
+    """
+    Obtiene el tipo de cambio actual para un par FX via yfinance.
+    Devuelve None si no hay datos disponibles.
+    """
+    try:
+        info = yf.Ticker(ticker).info
+        price = info.get("regularMarketPrice") or info.get("previousClose")
+        return float(price) if price else None
+    except Exception as e:
+        print(f"[FX actual] Error obteniendo {ticker}: {e}")
+        return None
 
 
 async def obtener_fx_batch(monedas: list[str]) -> dict[str, float]:
