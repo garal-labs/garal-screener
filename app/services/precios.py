@@ -236,7 +236,7 @@ async def _obtener_precio_actual(ticker: str) -> float | None:
 # ── FX rate helpers ───────────────────────────────────────────────────────────
 
 
-async def obtener_fx_historico(moneda: str, fecha: date) -> float | None:
+async def obtener_fx_by_date(moneda: str, fecha: date) -> float | None:
     """
     Devuelve el tipo de cambio EUR/moneda en una fecha concreta.
 
@@ -249,10 +249,10 @@ async def obtener_fx_historico(moneda: str, fecha: date) -> float | None:
         return 1.0
     ticker = f"EUR{moneda.upper()}=X"
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _fetch_fx_historico, ticker, fecha)
+    return await loop.run_in_executor(None, _fetch_fx_by_date, ticker, fecha)
 
 
-def _fetch_fx_historico(ticker: str, fecha: date) -> float | None:
+def _fetch_fx_by_date(ticker: str, fecha: date) -> float | None:
     """
     Obtiene el tipo de cambio de cierre para un par FX en una fecha concreta.
     Añade hasta 5 días de margen para cubrir fines de semana y festivos.
@@ -269,7 +269,7 @@ def _fetch_fx_historico(ticker: str, fecha: date) -> float | None:
         return None
 
 
-async def obtener_fx_actual(moneda: str) -> float | None:
+async def obtener_fx(moneda: str) -> float | None:
     """
     Devuelve el tipo de cambio EUR/moneda actual.
 
@@ -282,10 +282,10 @@ async def obtener_fx_actual(moneda: str) -> float | None:
         return 1.0
     ticker = f"EUR{moneda.upper()}=X"
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _fetch_fx_actual, ticker)
+    return await loop.run_in_executor(None, _fetch_fx, ticker)
 
 
-def _fetch_fx_actual(ticker: str) -> float | None:
+def _fetch_fx(ticker: str) -> float | None:
     """
     Obtiene el tipo de cambio actual para un par FX via yfinance.
     Devuelve None si no hay datos disponibles.
@@ -312,7 +312,7 @@ async def obtener_fx_batch(monedas: list[str]) -> dict[str, float]:
         return {}
 
     resultados = await asyncio.gather(
-        *[obtener_fx_actual(m) for m in monedas_unicas],
+        *[obtener_fx(m) for m in monedas_unicas],
         return_exceptions=True,
     )
     return {

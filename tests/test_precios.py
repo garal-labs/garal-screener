@@ -13,9 +13,9 @@ import pandas as pd
 
 from app.services.precios import (
     buscar_ticker_por_isin,
-    obtener_fx_actual,
+    obtener_fx,
     obtener_fx_batch,
-    obtener_fx_historico,
+    obtener_fx_by_date,
     obtener_precio_actual,
     obtener_precios_batch,
 )
@@ -183,45 +183,45 @@ class TestObtenerFxHistorico:
     async def test_devuelve_float_cuando_hay_datos(self):
         df = pd.DataFrame({"Close": [1.085]})
         with patch("app.services.precios._fetch_fx_historico", return_value=1.085):
-            result = await obtener_fx_historico("USD", _date(2024, 1, 15))
+            result = await obtener_fx_by_date("USD", _date(2024, 1, 15))
         assert result == pytest.approx(1.085)
 
     @pytest.mark.asyncio
     async def test_eur_devuelve_1_sin_llamar_yfinance(self):
         with patch("app.services.precios._fetch_fx_historico") as mock_fetch:
-            result = await obtener_fx_historico("EUR", _date(2024, 1, 15))
+            result = await obtener_fx_by_date("EUR", _date(2024, 1, 15))
         assert result == 1.0
         mock_fetch.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_devuelve_none_cuando_no_hay_datos(self):
         with patch("app.services.precios._fetch_fx_historico", return_value=None):
-            result = await obtener_fx_historico("USD", _date(2024, 1, 15))
+            result = await obtener_fx_by_date("USD", _date(2024, 1, 15))
         assert result is None
 
     @pytest.mark.asyncio
     async def test_eur_mayusculas_minusculas(self):
         with patch("app.services.precios._fetch_fx_historico") as mock_fetch:
-            result = await obtener_fx_historico("eur", _date(2024, 1, 15))
+            result = await obtener_fx_by_date("eur", _date(2024, 1, 15))
         assert result == 1.0
         mock_fetch.assert_not_called()
 
     def test_fetch_fx_historico_dataframe_vacio_devuelve_none(self):
-        from app.services.precios import _fetch_fx_historico
+        from app.services.precios import _fetch_fx_by_date
 
         empty_df = pd.DataFrame({"Close": []})
         with patch("yfinance.Ticker") as mock_ticker:
             mock_ticker.return_value.history.return_value = empty_df
-            result = _fetch_fx_historico("EURUSD=X", _date(2024, 1, 15))
+            result = _fetch_fx_by_date("EURUSD=X", _date(2024, 1, 15))
         assert result is None
 
     def test_fetch_fx_historico_devuelve_primer_cierre(self):
-        from app.services.precios import _fetch_fx_historico
+        from app.services.precios import _fetch_fx_by_date
 
         df = pd.DataFrame({"Close": [1.085, 1.090, 1.092]})
         with patch("yfinance.Ticker") as mock_ticker:
             mock_ticker.return_value.history.return_value = df
-            result = _fetch_fx_historico("EURUSD=X", _date(2024, 1, 15))
+            result = _fetch_fx_by_date("EURUSD=X", _date(2024, 1, 15))
         assert result == pytest.approx(1.085)
 
 
@@ -232,20 +232,20 @@ class TestObtenerFxActual:
     @pytest.mark.asyncio
     async def test_devuelve_float(self):
         with patch("app.services.precios._fetch_fx_actual", return_value=1.085):
-            result = await obtener_fx_actual("USD")
+            result = await obtener_fx("USD")
         assert result == pytest.approx(1.085)
 
     @pytest.mark.asyncio
     async def test_eur_devuelve_1_sin_llamar_yfinance(self):
         with patch("app.services.precios._fetch_fx_actual") as mock_fetch:
-            result = await obtener_fx_actual("EUR")
+            result = await obtener_fx("EUR")
         assert result == 1.0
         mock_fetch.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_devuelve_none_cuando_falla(self):
         with patch("app.services.precios._fetch_fx_actual", return_value=None):
-            result = await obtener_fx_actual("GBP")
+            result = await obtener_fx("GBP")
         assert result is None
 
 

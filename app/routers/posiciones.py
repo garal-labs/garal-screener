@@ -137,7 +137,7 @@ async def backfill_fx(cartera_id: int, db: Session = Depends(get_db)):
 
     fx_cache: dict[tuple, float | None] = {}
     for moneda, fecha in pares_unicos:
-        fx_cache[(moneda, fecha)] = await precios.obtener_fx_historico(moneda, fecha)
+        fx_cache[(moneda, fecha)] = await precios.obtener_fx_by_date(moneda, fecha)
 
     actualizados = 0
     omitidos = 0
