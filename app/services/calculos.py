@@ -72,10 +72,9 @@ def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
                 )
 
             # Ingreso de la venta en EUR menos comisión
+            # _precio_en_eur divide por tipo_cambio: precio_nativo / tc = EUR
             ingreso_venta = (
-                movimientos_ordenados.precio
-                * movimientos_ordenados.cantidad
-                * _tipo_cambio(movimientos_ordenados)
+                _precio_en_eur(movimientos_ordenados) * movimientos_ordenados.cantidad
             ) - comision
             plusvalia_realizada += ingreso_venta - coste_vendido
 
@@ -103,8 +102,10 @@ def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
 def _precio_en_eur(mov) -> float:
     """
     Convierte el precio del movimiento a EUR aplicando tipo de cambio.
+    Convenio: tipo_cambio sigue EURUSD=X → cuántas unidades de moneda por 1 EUR.
+    Para pasar precio nativo → EUR: precio_nativo / tipo_cambio.
     """
-    return float(mov.precio) * _tipo_cambio(mov)
+    return float(mov.precio) / _tipo_cambio(mov)
 
 
 def _tipo_cambio(mov) -> float:

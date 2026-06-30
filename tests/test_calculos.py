@@ -129,11 +129,11 @@ class TestCalcularPosicionFifo:
         assert r["plusvalia_realizada"] == pytest.approx(195.0, abs=0.01)
 
     def test_tipo_cambio_aplicado_en_compra(self):
-        # Precio en USD con tipo_cambio=1.1 (1 EUR = 1.1 USD → precio_eur = precio/tc?)
-        # _precio_en_eur = precio * tipo_cambio → 100 * 1.1 = 110 EUR por accion
+        # Precio en USD: 100 USD, tipo_cambio=1.1 (EURUSD=X: 1 EUR = 1.1 USD)
+        # precio_eur = precio_nativo / tipo_cambio = 100 / 1.1 ≈ 90.909 EUR/acción
         movs = [compra(1, D1, 10, 100.0, tipo_cambio=1.1)]
         r = calcular_posicion_fifo(movs)
-        assert r["precio_medio"] == pytest.approx(110.0)
+        assert r["precio_medio"] == pytest.approx(100.0 / 1.1, rel=1e-4)
 
     def test_tipo_cambio_none_equivale_a_1(self):
         movs_con_none = [compra(1, D1, 10, 100.0, tipo_cambio=None)]
