@@ -471,7 +471,7 @@ class TestBackfillFx:
                     "app.routers.posiciones.precios",
                     obtener_precios_batch=AsyncMock(return_value={"SAN": 4.0}),
                     obtener_fx_batch=AsyncMock(return_value={}),
-            obtener_fx_by_date=AsyncMock(return_value=1.085),
+                    obtener_fx_by_date=AsyncMock(return_value=1.085),
                 )
             )
             client.post(
