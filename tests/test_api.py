@@ -422,7 +422,9 @@ class TestInstrumentos:
 class TestBackfillFx:
     def _setup(self, client):
         """Crea cartera con un movimiento USD sin tipo_cambio."""
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "FX Test"}).json()["id"]
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "FX Test"}).json()[
+            "id"
+        ]
         with mock_precios():
             client.post(
                 f"{BASE}/movimientos",
@@ -453,7 +455,9 @@ class TestBackfillFx:
 
     def test_backfill_no_toca_movimientos_eur(self, client):
         """Movimientos de instrumentos EUR no deben modificarse."""
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "EUR Test"}).json()["id"]
+        cartera_id = client.post(
+            f"{BASE}/carteras", json={"nombre": "EUR Test"}
+        ).json()["id"]
         mock_eur = {**MOCK_IA, "moneda": "EUR", "ticker": "SAN"}
         with ExitStack() as stack:
             stack.enter_context(
@@ -511,7 +515,9 @@ class TestBackfillFx:
 
 class TestResumenDualCurrency:
     def _setup_usd(self, client, fx_rates=None):
-        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "USD Test"}).json()["id"]
+        cartera_id = client.post(
+            f"{BASE}/carteras", json={"nombre": "USD Test"}
+        ).json()["id"]
         with mock_precios(fx_rates=fx_rates or {}):
             client.post(
                 f"{BASE}/movimientos",

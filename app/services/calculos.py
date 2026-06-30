@@ -139,7 +139,9 @@ def calcular_plusvalia_latente(
         valor_actual es alias de valor_actual_eur para backwards-compatibility.
     """
     cantidad = posicion["cantidad_actual"]
-    coste = posicion["coste_total"]  # siempre en EUR (FIFO aplica tipo_cambio histórico)
+    coste = posicion[
+        "coste_total"
+    ]  # siempre en EUR (FIFO aplica tipo_cambio histórico)
 
     valor_actual_nativo = round(precio_actual_nativo * cantidad, 2)
     # fx_actual=1.0 para EUR → sin conversión; para USD: divide por fx
@@ -154,7 +156,9 @@ def calcular_plusvalia_latente(
         "valor_actual_nativo": valor_actual_nativo,
         "plusvalia_latente": plusvalia_latente,
         "rentabilidad_pct": rentabilidad_pct,
-        "plusvalia_total": round(plusvalia_latente + posicion["plusvalia_realizada"], 2),
+        "plusvalia_total": round(
+            plusvalia_latente + posicion["plusvalia_realizada"], 2
+        ),
     }
 
 

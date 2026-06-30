@@ -22,7 +22,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
     """Dependency de FastAPI: provee una sesión y la cierra al terminar."""
-    db: Session = SessionLocal()
+  cal()
     try:
         yield db
     finally:

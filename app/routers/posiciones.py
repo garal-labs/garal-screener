@@ -30,7 +30,11 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
 
     # Fetch precios actuales y tipos de cambio en paralelo
     precios_actuales, fx_rates = await asyncio.gather(
-        precios.obtener_precios_batch(tickers) if tickers else asyncio.sleep(0, result={}),
+        (
+            precios.obtener_precios_batch(tickers)
+            if tickers
+            else asyncio.sleep(0, result={})
+        ),
         precios.obtener_fx_batch(monedas) if monedas else asyncio.sleep(0, result={}),
     )
 
@@ -62,7 +66,11 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
 
         # Resolver FX actual: 1.0 para EUR o moneda desconocida
         moneda = instrumento.moneda
-        fx = fx_rates.get(moneda.upper(), 1.0) if moneda and moneda.upper() != "EUR" else 1.0
+        fx = (
+            fx_rates.get(moneda.upper(), 1.0)
+            if moneda and moneda.upper() != "EUR"
+            else 1.0
+        )
 
         plusvalias = {}
         if precio_actual is not None:

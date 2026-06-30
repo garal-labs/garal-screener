@@ -207,7 +207,9 @@ class TestCalcularPlusvalia:
 
         assert r["valor_actual_nativo"] == pytest.approx(1800.0)
         assert r["valor_actual_eur"] == pytest.approx(1714.29, abs=0.01)
-        assert r["plusvalia_latente"] == pytest.approx(1714.29 - round(10 * 150 / 1.10, 2), abs=0.01)
+        assert r["plusvalia_latente"] == pytest.approx(
+            1714.29 - round(10 * 150 / 1.10, 2), abs=0.01
+        )
         assert r["rentabilidad_pct"] == pytest.approx(
             (r["plusvalia_latente"] / pos["coste_total"]) * 100, abs=0.01
         )
@@ -230,8 +232,14 @@ class TestCalcularPlusvalia:
         """La respuesta debe incluir todos los campos del contrato."""
         pos = self._posicion(10, 1000.0)
         r = calcular_plusvalia_latente(pos, 100.0, fx_actual=1.05)
-        for campo in ("valor_actual", "valor_actual_eur", "valor_actual_nativo",
-                      "plusvalia_latente", "rentabilidad_pct", "plusvalia_total"):
+        for campo in (
+            "valor_actual",
+            "valor_actual_eur",
+            "valor_actual_nativo",
+            "plusvalia_latente",
+            "rentabilidad_pct",
+            "plusvalia_total",
+        ):
             assert campo in r
 
 
