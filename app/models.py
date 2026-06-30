@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column, relationship
@@ -53,7 +53,7 @@ class Movimiento(Base):
     )
     instrumento_id: Mapped[int] = mapped_column(Integer, ForeignKey("instrumentos.id"))
     tipo: Mapped[str] = mapped_column(String)  # compra | venta
-    fecha: Mapped[Date] = mapped_column(Date)
+    fecha: Mapped[date] = mapped_column(Date)
     cantidad: Mapped[float] = mapped_column(Float)
     precio: Mapped[float] = mapped_column(Float)  # en moneda original del instrumento
     comision: Mapped[float] = mapped_column(Float, default=0.0)  # opcional, default 0

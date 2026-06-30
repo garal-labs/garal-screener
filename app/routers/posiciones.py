@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -139,8 +140,9 @@ async def backfill_fx(cartera_id: int, db: Session = Depends(get_db)):
     )
 
     # Agrupar por (moneda, fecha) para minimizar llamadas a yfinance
-    pares_unicos: set[tuple[str, object]] = {
-        (mov.instrumento.moneda, mov.fecha) for mov in movimientos
+    # str() narrowing: el query ya filtra moneda.isnot(None), pero mypy no lo sabe
+    pares_unicos: set[tuple[str, date]] = {
+        (str(mov.instrumento.moneda), mov.fecha) for mov in movimientos
     }
 
     fx_cache: dict[tuple, float | None] = {}
