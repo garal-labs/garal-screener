@@ -90,7 +90,7 @@ def mock_precios(fx_rates=None):
             "app.routers.posiciones.precios",
             obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
             obtener_fx_batch=AsyncMock(return_value=fx_rates),
-            obtener_fx_historico=AsyncMock(return_value=1.085),
+            obtener_fx_by_date=AsyncMock(return_value=1.085),
         )
     )
     return stack
@@ -471,7 +471,7 @@ class TestBackfillFx:
                     "app.routers.posiciones.precios",
                     obtener_precios_batch=AsyncMock(return_value={"SAN": 4.0}),
                     obtener_fx_batch=AsyncMock(return_value={}),
-                    obtener_fx_historico=AsyncMock(return_value=1.085),
+            obtener_fx_by_date=AsyncMock(return_value=1.085),
                 )
             )
             client.post(
@@ -500,7 +500,7 @@ class TestBackfillFx:
                     "app.routers.posiciones.precios",
                     obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
                     obtener_fx_batch=AsyncMock(return_value={}),
-                    obtener_fx_historico=AsyncMock(return_value=None),  # sin datos
+                    obtener_fx_by_date=AsyncMock(return_value=None),  # sin datos
                 )
             )
             r = client.post(f"{BASE}/carteras/{cartera_id}/backfill-fx")
