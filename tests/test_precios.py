@@ -5,11 +5,11 @@ Las llamadas a yfinance se mockean via unittest.mock.
 Las llamadas a httpx (OpenFIGI) se mockean con AsyncMock.
 """
 
+from datetime import date as _date
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 import pandas as pd
+import pytest
 
 from app.services.precios import (
     buscar_ticker_por_isin,
@@ -175,33 +175,30 @@ class TestBuscarTickerPorIsin:
 
 # ── obtener_fx_historico ──────────────────────────────────────────────────────
 
-from datetime import date as _date
-
 
 class TestObtenerFxHistorico:
     @pytest.mark.asyncio
     async def test_devuelve_float_cuando_hay_datos(self):
-        df = pd.DataFrame({"Close": [1.085]})
-        with patch("app.services.precios._fetch_fx_historico", return_value=1.085):
+        with patch("app.services.precios._fetch_fx_by_date", return_value=1.085):
             result = await obtener_fx_by_date("USD", _date(2024, 1, 15))
         assert result == pytest.approx(1.085)
 
     @pytest.mark.asyncio
     async def test_eur_devuelve_1_sin_llamar_yfinance(self):
-        with patch("app.services.precios._fetch_fx_historico") as mock_fetch:
+        with patch("app.services.precios._fetch_fx_by_date") as mock_fetch:
             result = await obtener_fx_by_date("EUR", _date(2024, 1, 15))
         assert result == 1.0
         mock_fetch.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_devuelve_none_cuando_no_hay_datos(self):
-        with patch("app.services.precios._fetch_fx_historico", return_value=None):
+        with patch("app.services.precios._fetch_fx_by_date", return_value=None):
             result = await obtener_fx_by_date("USD", _date(2024, 1, 15))
         assert result is None
 
     @pytest.mark.asyncio
     async def test_eur_mayusculas_minusculas(self):
-        with patch("app.services.precios._fetch_fx_historico") as mock_fetch:
+        with patch("app.services.precios._fetch_fx_by_date") as mock_fetch:
             result = await obtener_fx_by_date("eur", _date(2024, 1, 15))
         assert result == 1.0
         mock_fetch.assert_not_called()
@@ -231,20 +228,20 @@ class TestObtenerFxHistorico:
 class TestObtenerFxActual:
     @pytest.mark.asyncio
     async def test_devuelve_float(self):
-        with patch("app.services.precios._fetch_fx_actual", return_value=1.085):
+        with patch("app.services.precios._fetch_fx", return_value=1.085):
             result = await obtener_fx("USD")
         assert result == pytest.approx(1.085)
 
     @pytest.mark.asyncio
     async def test_eur_devuelve_1_sin_llamar_yfinance(self):
-        with patch("app.services.precios._fetch_fx_actual") as mock_fetch:
+        with patch("app.services.precios._fetch_fx") as mock_fetch:
             result = await obtener_fx("EUR")
         assert result == 1.0
         mock_fetch.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_devuelve_none_cuando_falla(self):
-        with patch("app.services.precios._fetch_fx_actual", return_value=None):
+        with patch("app.services.precios._fetch_fx", return_value=None):
             result = await obtener_fx("GBP")
         assert result is None
 
@@ -260,20 +257,20 @@ class TestObtenerFxBatch:
         async def fake_fx_actual(moneda):
             return fx_map.get(moneda.upper())
 
-        with patch("app.services.precios.obtener_fx_actual", side_effect=fake_fx_actual):
+        with patch("app.services.precios.obtener_fx", side_effect=fake_fx_actual):
             result = await obtener_fx_batch(["USD", "GBP"])
         assert result == {"USD": pytest.approx(1.085), "GBP": pytest.approx(0.857)}
 
     @pytest.mark.asyncio
     async def test_lista_vacia_devuelve_dict_vacio(self):
-        with patch("app.services.precios.obtener_fx_actual") as mock_fx:
+        with patch("app.services.precios.obtener_fx") as mock_fx:
             result = await obtener_fx_batch([])
         mock_fx.assert_not_called()
         assert result == {}
 
     @pytest.mark.asyncio
     async def test_eur_excluido_del_batch(self):
-        with patch("app.services.precios.obtener_fx_actual") as mock_fx:
+        with patch("app.services.precios.obtener_fx") as mock_fx:
             result = await obtener_fx_batch(["EUR"])
         mock_fx.assert_not_called()
         assert result == {}
@@ -283,7 +280,7 @@ class TestObtenerFxBatch:
         async def fake_fx_actual(moneda):
             return 1.085 if moneda == "USD" else None
 
-        with patch("app.services.precios.obtener_fx_actual", side_effect=fake_fx_actual):
+        with patch("app.services.precios.obtener_fx", side_effect=fake_fx_actual):
             result = await obtener_fx_batch(["USD", "JPY"])
         assert "USD" in result
         assert "JPY" not in result
@@ -296,7 +293,7 @@ class TestObtenerFxBatch:
             calls.append(moneda)
             return 1.085
 
-        with patch("app.services.precios.obtener_fx_actual", side_effect=fake_fx_actual):
+        with patch("app.services.precios.obtener_fx", side_effect=fake_fx_actual):
             await obtener_fx_batch(["USD", "USD", "usd"])
         # Solo debe llamarse una vez (set de monedas únicas)
         assert len(calls) == 1
