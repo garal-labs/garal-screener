@@ -1,11 +1,19 @@
-.PHONY: lint fmt check
+.PHONY: check typecheck resolve
+
+PYTHON = .venv/bin/python
 
 # Check everything — same rules as CI, all at once
 check:
-	ruff check .
-	black --check --diff .
+	$(PYTHON) -m ruff check .
+	$(PYTHON) -m black --check --diff .
+	$(PYTHON) -m mypy . --ignore-missing-imports --no-error-summary
+	$(PYTHON) -m pytest
+
+# Type check only
+typecheck:
+	$(PYTHON) -m mypy . --ignore-missing-imports --no-error-summary
 
 # Auto-fix what can be fixed
 resolve:
-	black .
-	ruff check . --fix
+	$(PYTHON) -m black .
+	$(PYTHON) -m ruff check . --fix

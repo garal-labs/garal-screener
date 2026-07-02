@@ -3,9 +3,18 @@ Servicio de metadatos y precios de instrumentos financieros.
 
 - Ticker desde ISIN  → OpenFIGI (gratuito, sin API key)
 - Metadatos + precio → yfinance (Yahoo Finance, sin API key)
+- Tipos de cambio FX → yfinance (EUR{MONEDA}=X, ej. EURUSD=X)
+
+Convenio FX de Yahoo Finance
+-----------------------------
+EURUSD=X devuelve cuántos USD vale 1 EUR (ej. 1.085).
+Para convertir precio en moneda nativa a EUR: precio_nativo / fx
+Funciones de este módulo siguen ese convenio y lo documentan en sus
+firmas para evitar confusiones.
 """
 
 import asyncio
+from datetime import date, timedelta
 
 import httpx
 import yfinance as yf
@@ -222,6 +231,95 @@ async def _obtener_precio_actual(ticker: str) -> float | None:
     loop = asyncio.get_event_loop()
     perfil = await loop.run_in_executor(None, _obtener_info_yfinance, ticker)
     return perfil.get("precio") if perfil else None
+
+
+# ── FX rate helpers ───────────────────────────────────────────────────────────
+
+
+async def obtener_fx_by_date(moneda: str, fecha: date) -> float | None:
+    """
+    Devuelve el tipo de cambio EUR/moneda en una fecha concreta.
+
+    Convenio: EURUSD=X → cuántos USD por 1 EUR (ej. 1.085).
+    Para convertir precio_nativo → EUR: precio_nativo / resultado.
+
+    Devuelve 1.0 para EUR. Devuelve None si yfinance no tiene datos.
+    """
+    if moneda.upper() == "EUR":
+        return 1.0
+    ticker = f"EUR{moneda.upper()}=X"
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _fetch_fx_by_date, ticker, fecha)
+
+
+def _fetch_fx_by_date(ticker: str, fecha: date) -> float | None:
+    """
+    Obtiene el tipo de cambio de cierre para un par FX en una fecha concreta.
+    Añade hasta 5 días de margen para cubrir fines de semana y festivos.
+    Devuelve None si yfinance no tiene datos para ese par/fecha.
+    """
+    try:
+        end = fecha + timedelta(days=5)
+        hist = yf.Ticker(ticker).history(start=str(fecha), end=str(end))
+        if hist.empty:
+            return None
+        return float(hist["Close"].iloc[0])
+    except Exception as e:
+        print(f"[FX histórico] Error obteniendo {ticker} para {fecha}: {e}")
+        return None
+
+
+async def obtener_fx(moneda: str) -> float | None:
+    """
+    Devuelve el tipo de cambio EUR/moneda actual.
+
+    Convenio: EURUSD=X → cuántos USD por 1 EUR (ej. 1.085).
+    Para convertir precio_nativo → EUR: precio_nativo / resultado.
+
+    Devuelve 1.0 para EUR. Devuelve None si yfinance no tiene datos.
+    """
+    if moneda.upper() == "EUR":
+        return 1.0
+    ticker = f"EUR{moneda.upper()}=X"
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _fetch_fx, ticker)
+
+
+def _fetch_fx(ticker: str) -> float | None:
+    """
+    Obtiene el tipo de cambio actual para un par FX via yfinance.
+    Devuelve None si no hay datos disponibles.
+    """
+    try:
+        info = yf.Ticker(ticker).info
+        price = info.get("regularMarketPrice") or info.get("previousClose")
+        return float(price) if price else None
+    except Exception as e:
+        print(f"[FX actual] Error obteniendo {ticker}: {e}")
+        return None
+
+
+async def obtener_fx_batch(monedas: list[str]) -> dict[str, float]:
+    """
+    Obtiene tipos de cambio EUR/moneda actuales para una lista de monedas.
+    Las monedas EUR se omiten (no necesitan conversión).
+    Devuelve {moneda: fx} para las monedas con datos disponibles.
+
+    Convenio: valores siguen EUR{MONEDA}=X → precio_nativo / fx = EUR.
+    """
+    monedas_unicas = {m.upper() for m in monedas if m and m.upper() != "EUR"}
+    if not monedas_unicas:
+        return {}
+
+    resultados = await asyncio.gather(
+        *[obtener_fx(m) for m in monedas_unicas],
+        return_exceptions=True,
+    )
+    return {
+        moneda: fx
+        for moneda, fx in zip(monedas_unicas, resultados)
+        if isinstance(fx, float)
+    }
 
 
 # ── Public aliases (backwards-compatible API) ─────────────────────────────────
