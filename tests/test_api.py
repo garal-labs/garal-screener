@@ -4,6 +4,8 @@ Todos los tests usan SQLite en memoria (ver conftest.py).
 Las llamadas externas (FMP, Anthropic) se mockean.
 """
 
+import logging
+import re
 from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
@@ -655,3 +657,72 @@ class TestAuth:
         r = client.post(f"{AUTH_BASE}/logout")
         assert r.status_code == 200
         assert r.json()["ok"] is True
+
+
+class TestPasswordReset:
+    EMAIL = "reset-me@example.com"
+    PASSWORD = "original-password1"
+
+    def _register(self, client):
+        client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": self.EMAIL, "password": self.PASSWORD},
+        )
+
+    def _captured_token(self, client, caplog):
+        """Registers the test user and captures the dev-stub reset token from logs."""
+        self._register(client)
+        caplog.set_level(logging.INFO, logger="app.auth.router")
+        r = client.post(f"{AUTH_BASE}/forgot-password", json={"email": self.EMAIL})
+        assert r.status_code == 200
+        match = re.search(r"token=(\S+)", caplog.text)
+        assert match, "expected the dev stub to log a reset token"
+        return match.group(1)
+
+    def test_forgot_password_does_not_leak_existence(self, client):
+        self._register(client)
+        r_known = client.post(
+            f"{AUTH_BASE}/forgot-password", json={"email": self.EMAIL}
+        )
+        r_unknown = client.post(
+            f"{AUTH_BASE}/forgot-password", json={"email": "nobody@example.com"}
+        )
+        assert r_known.status_code == 200
+        assert r_unknown.status_code == 200
+        assert r_known.json() == r_unknown.json()
+
+    def test_reset_password_success_and_single_use(self, client, caplog):
+        token = self._captured_token(client, caplog)
+
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": token, "new_password": "brand-new-password1"},
+        )
+        assert r.status_code == 200
+
+        # Old password no longer works, new one does.
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": self.EMAIL, "password": self.PASSWORD},
+        )
+        assert r.status_code == 401
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": self.EMAIL, "password": "brand-new-password1"},
+        )
+        assert r.status_code == 200
+
+        # Token is single-use: reusing it fails.
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": token, "new_password": "another-password1"},
+        )
+        assert r.status_code == 400
+
+    def test_reset_password_garbage_token_rejected(self, client):
+        self._register(client)
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": "not-a-real-token", "new_password": "whatever-new-1"},
+        )
+        assert r.status_code == 400
