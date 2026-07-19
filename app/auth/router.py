@@ -6,23 +6,25 @@ router owns cookie issuance/clearing and delegates all crypto to
 `security.py` — it never touches JWT secrets or password hashes directly.
 """
 
-import hashlib
 import logging
-import os
-import secrets
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.auth.security import (
     ACCESS_TOKEN_COOKIE_NAME,
     ACCESS_TOKEN_EXPIRE_MINUTES,
+    DUMMY_PASSWORD_HASH,
+    IS_LOCAL_ENV,
     create_access_token,
+    generate_reset_token,
     get_current_user,
     hash_password,
+    hash_reset_token,
     verify_password,
 )
 from app.database import get_db
@@ -40,7 +42,7 @@ def _cookie_secure() -> bool:
     Reuses the same `ENV` convention as the JWT secret fail-fast check in
     `app/auth/security.py`: only `ENV=local` gets the relaxed setting.
     """
-    return os.getenv("ENV", "local") != "local"
+    return not IS_LOCAL_ENV
 
 
 def _set_session_cookie(response: Response, token: str) -> None:
@@ -70,18 +72,27 @@ def _clear_session_cookie(response: Response) -> None:
 )
 def register(data: schemas.UserCreate, db: Session = Depends(get_db)):
     """Create a new user account. Does not start a session — call `/auth/login` next."""
-    existing = db.query(models.User).filter(models.User.email == data.email).first()
+    normalized_email = data.email.lower()
+    existing = (
+        db.query(models.User).filter(models.User.email == normalized_email).first()
+    )
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
     user = models.User(
-        email=data.email,
+        email=normalized_email,
         hashed_password=hash_password(data.password),
         nombre=data.nombre,
     )
     db.add(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
+        ) from exc
     db.refresh(user)
     return user
 
@@ -91,8 +102,11 @@ def login(
     data: schemas.LoginRequest, response: Response, db: Session = Depends(get_db)
 ):
     """Verify credentials and start a session via the `access_token` cookie."""
-    user = db.query(models.User).filter(models.User.email == data.email).first()
-    if user is None or not verify_password(data.password, user.hashed_password):
+    normalized_email = data.email.lower()
+    user = db.query(models.User).filter(models.User.email == normalized_email).first()
+    password_hash = user.hashed_password if user is not None else DUMMY_PASSWORD_HASH
+    password_ok = verify_password(data.password, password_hash)
+    if user is None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -127,8 +141,7 @@ def forgot_password(data: schemas.ForgotPasswordRequest, db: Session = Depends(g
     """
     user = db.query(models.User).filter(models.User.email == data.email).first()
     if user is not None:
-        raw_token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        raw_token, token_hash = generate_reset_token()
         reset_token = models.PasswordResetToken(
             user_id=user.id,
             token_hash=token_hash,
@@ -136,12 +149,13 @@ def forgot_password(data: schemas.ForgotPasswordRequest, db: Session = Depends(g
         )
         db.add(reset_token)
         db.commit()
-        logger.info(
-            "Password reset requested for user_id=%s — dev reset link: "
-            "/reset-password?token=%s",
-            user.id,
-            raw_token,
-        )
+        if IS_LOCAL_ENV:
+            logger.info(
+                "Password reset requested for user_id=%s — dev reset link: "
+                "/reset-password?token=%s",
+                user.id,
+                raw_token,
+            )
     return {"ok": True}
 
 
@@ -159,7 +173,7 @@ def reset_password(data: schemas.ResetPasswordRequest, db: Session = Depends(get
         detail="Invalid, expired, or already-used token",
     )
 
-    token_hash = hashlib.sha256(data.token.encode()).hexdigest()
+    token_hash = hash_reset_token(data.token)
     now = datetime.now(UTC)
     result = db.execute(
         text(
@@ -182,7 +196,10 @@ def reset_password(data: schemas.ResetPasswordRequest, db: Session = Depends(get
         # Unreachable given rowcount == 1 above; guards mypy narrowing and
         # any theoretical race between the UPDATE and this SELECT.
         db.rollback()
-        raise invalid_token_error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal error processing reset token",
+        )
 
     user = db.query(models.User).filter(models.User.id == reset_token.user_id).first()
     if user is None:
