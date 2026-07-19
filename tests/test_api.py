@@ -585,3 +585,73 @@ def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+AUTH_BASE = f"{BASE}/auth"
+
+
+class TestAuth:
+    def test_register_login_me(self, client):
+        r = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "new-user@example.com", "password": "supersecret1"},
+        )
+        assert r.status_code == 201
+        assert r.json()["email"] == "new-user@example.com"
+
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": "new-user@example.com", "password": "supersecret1"},
+        )
+        assert r.status_code == 200
+        assert "access_token" in r.cookies
+
+        r = client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 200
+        assert r.json()["email"] == "new-user@example.com"
+
+    def test_register_duplicate_email_rejected(self, client):
+        payload = {"email": "dup@example.com", "password": "supersecret1"}
+        client.post(f"{AUTH_BASE}/register", json=payload)
+        r = client.post(f"{AUTH_BASE}/register", json=payload)
+        assert r.status_code == 400
+
+    def test_login_wrong_password_rejected(self, client):
+        client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "wrongpass@example.com", "password": "supersecret1"},
+        )
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": "wrongpass@example.com", "password": "not-the-password"},
+        )
+        assert r.status_code == 401
+        assert "access_token" not in r.cookies
+
+    def test_login_unknown_email_rejected(self, client):
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": "ghost@example.com", "password": "whatever123"},
+        )
+        assert r.status_code == 401
+
+    def test_me_without_session_rejected(self, client):
+        r = client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 401
+
+    def test_logout_clears_cookie(self, auth_client):
+        r = auth_client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 200
+
+        r = auth_client.post(f"{AUTH_BASE}/logout")
+        assert r.status_code == 200
+
+        r = auth_client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 401
+
+    def test_logout_without_session_is_safe(self, client):
+        r = client.post(f"{AUTH_BASE}/logout")
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
