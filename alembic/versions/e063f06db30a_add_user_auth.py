@@ -6,14 +6,15 @@ Create Date: 2026-07-18 21:05:18.279189
 
 """
 
+import os
 import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
 import sqlalchemy as sa
+from passlib.context import CryptContext
 
 from alembic import op
-from app.auth.security import hash_password
 
 # revision identifiers, used by Alembic.
 revision: str = "e063f06db30a"
@@ -24,7 +25,13 @@ depends_on: str | Sequence[str] | None = None
 # Every pre-auth cartera is backfilled to this system/admin user (see design.md).
 # The account gets an unusable random password hash — real access is regained
 # through the forgot-password flow once auth is live.
-SYSTEM_USER_EMAIL = "fjgarcia.alvarez@hotmail.com"
+SYSTEM_USER_EMAIL = os.getenv("MIGRATION_SYSTEM_USER_EMAIL", "system@internal.local")
+
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _hash_password(password: str) -> str:
+    return str(_pwd_context.hash(password))
 
 
 def upgrade() -> None:
@@ -78,22 +85,28 @@ def upgrade() -> None:
     #        existing cartera (they predate per-user ownership) ###
     connection = op.get_bind()
     now = datetime.now(UTC)
-    connection.execute(
-        sa.text(
-            "INSERT INTO users (email, hashed_password, is_active, created_at) "
-            "VALUES (:email, :hashed_password, :is_active, :created_at)"
-        ),
-        {
-            "email": SYSTEM_USER_EMAIL,
-            "hashed_password": hash_password(secrets.token_urlsafe(32)),
-            "is_active": True,
-            "created_at": now,
-        },
-    )
     system_user_id = connection.execute(
         sa.text("SELECT id FROM users WHERE email = :email"),
         {"email": SYSTEM_USER_EMAIL},
-    ).scalar_one()
+    ).scalar_one_or_none()
+    if system_user_id is None:
+        connection.execute(
+            sa.text(
+                "INSERT INTO users (email, hashed_password, is_active, created_at) "
+                "VALUES (:email, :hashed_password, :is_active, :created_at)"
+            ),
+            {
+                "email": SYSTEM_USER_EMAIL,
+                "hashed_password": _hash_password(secrets.token_urlsafe(32)),
+                "is_active": True,
+                "created_at": now,
+            },
+        )
+        system_user_id = connection.execute(
+            sa.text("SELECT id FROM users WHERE email = :email"),
+            {"email": SYSTEM_USER_EMAIL},
+        ).scalar_one()
+
     connection.execute(
         sa.text("UPDATE carteras SET user_id = :system_user_id WHERE user_id IS NULL"),
         {"system_user_id": system_user_id},

@@ -39,6 +39,9 @@ class TestPasswordHashing:
         """Same password hashed twice must produce different hashes (random salt)."""
         assert hash_password("supersecret123") != hash_password("supersecret123")
 
+    def test_verify_password_returns_false_for_malformed_hash(self):
+        assert verify_password("supersecret123", "not-a-valid-hash") is False
+
 
 # ── JWT issue / decode ───────────────────────────────────────────────────────
 
@@ -94,4 +97,22 @@ class TestAccessToken:
 
         with pytest.raises(HTTPException) as exc_info:
             decode_access_token(token_without_sub)
+        assert exc_info.value.status_code == 401
+
+    def test_decode_token_with_non_numeric_sub_claim_raises_401(self):
+        payload = {
+            "sub": "abc",
+            "exp": datetime.now(UTC) + timedelta(minutes=5),
+        }
+        token_with_non_numeric_sub = jwt.encode(
+            payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            decode_access_token(token_with_non_numeric_sub)
+        assert exc_info.value.status_code == 401
+
+    def test_decode_non_jwt_string_raises_401(self):
+        with pytest.raises(HTTPException) as exc_info:
+            decode_access_token("not-a-token")
         assert exc_info.value.status_code == 401

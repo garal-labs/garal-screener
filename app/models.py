@@ -17,7 +17,7 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String)
     nombre: Mapped[str | None] = mapped_column(String)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     carteras: Mapped[list["Cartera"]] = relationship("Cartera", back_populates="owner")
     reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(
@@ -35,7 +35,7 @@ class PasswordResetToken(Base):
     token_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[datetime | None] = mapped_column(DateTime)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     user: Mapped["User"] = relationship("User", back_populates="reset_tokens")
 

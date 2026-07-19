@@ -13,18 +13,30 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from fastapi import Cookie, Depends, HTTPException, status
 from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
 from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
 
-JWT_SECRET_KEY = os.getenv(
-    "JWT_SECRET_KEY", "dev-insecure-secret-change-me-in-production-please"
-)
+_env = os.getenv("ENV", "local")
+_jwt_secret = os.getenv("JWT_SECRET_KEY")
+if _jwt_secret:
+    JWT_SECRET_KEY = _jwt_secret
+elif _env == "local":
+    JWT_SECRET_KEY = "dev-insecure-secret-change-me-in-production-please"  # noqa: S105
+else:
+    raise RuntimeError("JWT_SECRET_KEY must be set outside local development")
+
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_COOKIE_NAME = "access_token"  # noqa: S105 — cookie name, not a credential
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail)
 
 
 def hash_password(password: str) -> str:
@@ -34,10 +46,15 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed: str) -> bool:
     """Check a plaintext password against a stored bcrypt hash."""
-    return bool(_pwd_context.verify(password, hashed))
+    try:
+        return bool(_pwd_context.verify(password, hashed))
+    except (ValueError, UnknownHashError):
+        return False
 
 
-def create_access_token(user_id: int, expires_minutes: int = 60 * 24 * 7) -> str:
+def create_access_token(
+    user_id: int, expires_minutes: int = ACCESS_TOKEN_EXPIRE_MINUTES
+) -> str:
     """Issue a signed JWT carrying the user id (`sub`) and an expiry claim."""
     now = datetime.now(UTC)
     payload = {
@@ -57,17 +74,11 @@ def decode_access_token(token: str) -> int:
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired session",
-        ) from exc
+        raise _unauthorized("Invalid or expired session") from exc
     try:
         return int(payload["sub"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired session",
-        ) from exc
+        raise _unauthorized("Invalid or expired session") from exc
 
 
 def get_current_user(
@@ -76,15 +87,11 @@ def get_current_user(
 ) -> models.User:
     """Resolve the authenticated user from the `access_token` session cookie."""
     if access_token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
+        raise _unauthorized("Not authenticated")
     user_id = decode_access_token(access_token)
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated"
-        )
+        raise _unauthorized("Not authenticated")
     return user
 
 
