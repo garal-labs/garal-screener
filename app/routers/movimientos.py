@@ -108,15 +108,15 @@ def eliminar_movimiento(
 ):
     mov = (
         db.query(models.Movimiento)
-        .filter(models.Movimiento.id == movimiento_id)
+        .join(models.Cartera)
+        .filter(
+            models.Movimiento.id == movimiento_id,
+            models.Cartera.user_id == current_user.id,
+        )
         .first()
     )
     if not mov:
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")
-    # Resolving through get_owned_cartera keeps the same 404-on-foreign
-    # behavior: a movimiento whose parent cartera isn't owned by the
-    # caller is treated as not found, never leaking that it exists.
-    get_owned_cartera(cartera_id=mov.cartera_id, current_user=current_user, db=db)
     db.delete(mov)
     db.commit()
     return {"ok": True}

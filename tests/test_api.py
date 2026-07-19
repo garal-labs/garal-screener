@@ -688,8 +688,13 @@ class TestOwnershipAuthorization:
                     "precio": 180.0,
                 },
             ).json()["id"]
-        r = auth_client.delete(f"{BASE}/movimientos/{mov_id}")
-        assert r.status_code == 404
+        r_foreign = auth_client.delete(f"{BASE}/movimientos/{mov_id}")
+        r_missing = auth_client.delete(f"{BASE}/movimientos/999999")
+
+        assert r_foreign.status_code == 404
+        assert r_missing.status_code == 404
+        assert r_foreign.json()["detail"] == r_missing.json()["detail"]
+        assert r_foreign.json()["detail"] == "Movimiento no encontrado"
 
     # -- Posiciones endpoints are authorized through cartera ownership -------
 
