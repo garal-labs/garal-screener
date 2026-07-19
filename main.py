@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth.router import router as auth_router
 from app.database import init_db
 from app.routers.carteras import router as carteras_router
 from app.routers.instrumentos import router as instrumentos_router
@@ -47,6 +48,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router, prefix="/api/v1")
 app.include_router(carteras_router, prefix="/api/v1")
 app.include_router(instrumentos_router, prefix="/api/v1")
 app.include_router(movimientos_router, prefix="/api/v1")

@@ -4,10 +4,16 @@ Todos los tests usan SQLite en memoria (ver conftest.py).
 Las llamadas externas (FMP, Anthropic) se mockean.
 """
 
+import logging
+import re
 from contextlib import ExitStack
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from app import models
+from app.auth.security import generate_reset_token
 
 BASE = "/api/v1"
 
@@ -585,3 +591,187 @@ def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+
+AUTH_BASE = f"{BASE}/auth"
+
+
+class TestAuth:
+    def test_register_login_me(self, client):
+        r = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "new-user@example.com", "password": "supersecret1"},
+        )
+        assert r.status_code == 201
+        assert r.json()["email"] == "new-user@example.com"
+
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": "new-user@example.com", "password": "supersecret1"},
+        )
+        assert r.status_code == 200
+        assert "access_token" in r.cookies
+
+        r = client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 200
+        assert r.json()["email"] == "new-user@example.com"
+
+    def test_register_duplicate_email_rejected(self, client):
+        payload = {"email": "dup@example.com", "password": "supersecret1"}
+        client.post(f"{AUTH_BASE}/register", json=payload)
+        r = client.post(f"{AUTH_BASE}/register", json=payload)
+        assert r.status_code == 400
+
+    def test_register_password_length_boundaries(self, client):
+        r_short = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "short-pass@example.com", "password": "1234567"},
+        )
+        r_long = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "long-pass@example.com", "password": "x" * 73},
+        )
+        assert r_short.status_code == 422
+        assert r_long.status_code == 422
+
+    def test_register_invalid_email_format_returns_422(self, client):
+        r = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "not-an-email", "password": "supersecret1"},
+        )
+        assert r.status_code == 422
+
+    def test_login_wrong_password_rejected(self, client):
+        client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "wrongpass@example.com", "password": "supersecret1"},
+        )
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": "wrongpass@example.com", "password": "not-the-password"},
+        )
+        assert r.status_code == 401
+        assert "access_token" not in r.cookies
+
+    def test_login_unknown_email_rejected(self, client):
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": "ghost@example.com", "password": "whatever123"},
+        )
+        assert r.status_code == 401
+
+    def test_me_without_session_rejected(self, client):
+        r = client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 401
+
+    def test_logout_clears_cookie(self, auth_client):
+        r = auth_client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 200
+
+        r = auth_client.post(f"{AUTH_BASE}/logout")
+        assert r.status_code == 200
+
+        r = auth_client.get(f"{AUTH_BASE}/me")
+        assert r.status_code == 401
+
+    def test_logout_without_session_is_safe(self, client):
+        r = client.post(f"{AUTH_BASE}/logout")
+        assert r.status_code == 200
+        assert r.json()["ok"] is True
+
+
+class TestPasswordReset:
+    EMAIL = "reset-me@example.com"
+    PASSWORD = "original-password1"
+
+    def _register(self, client):
+        client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": self.EMAIL, "password": self.PASSWORD},
+        )
+
+    def _captured_token(self, client, caplog):
+        """Registers the test user and captures the dev-stub reset token from logs."""
+        self._register(client)
+        caplog.set_level(logging.INFO, logger="app.auth.router")
+        r = client.post(f"{AUTH_BASE}/forgot-password", json={"email": self.EMAIL})
+        assert r.status_code == 200
+        match = re.search(r"token=(\S+)", caplog.text)
+        assert match, "expected the dev stub to log a reset token"
+        return match.group(1)
+
+    def test_forgot_password_does_not_leak_existence(self, client):
+        self._register(client)
+        r_known = client.post(
+            f"{AUTH_BASE}/forgot-password", json={"email": self.EMAIL}
+        )
+        r_unknown = client.post(
+            f"{AUTH_BASE}/forgot-password", json={"email": "nobody@example.com"}
+        )
+        assert r_known.status_code == 200
+        assert r_unknown.status_code == 200
+        assert r_known.json() == r_unknown.json()
+
+    def test_reset_password_success_and_single_use(self, client, caplog):
+        token = self._captured_token(client, caplog)
+
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": token, "new_password": "brand-new-password1"},
+        )
+        assert r.status_code == 200
+
+        # Old password no longer works, new one does.
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": self.EMAIL, "password": self.PASSWORD},
+        )
+        assert r.status_code == 401
+        r = client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": self.EMAIL, "password": "brand-new-password1"},
+        )
+        assert r.status_code == 200
+
+        # Token is single-use: reusing it fails.
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": token, "new_password": "another-password1"},
+        )
+        assert r.status_code == 400
+
+    def test_reset_password_garbage_token_rejected(self, client):
+        self._register(client)
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": "not-a-real-token", "new_password": "whatever-new-1"},
+        )
+        assert r.status_code == 400
+
+    def test_reset_password_expired_token_rejected(self, client, db_session):
+        self._register(client)
+        user = (
+            db_session.query(models.User)
+            .filter(models.User.email == self.EMAIL)
+            .first()
+        )
+        assert user is not None
+
+        raw_token, token_hash = generate_reset_token()
+        db_session.add(
+            models.PasswordResetToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            )
+        )
+        db_session.commit()
+
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": raw_token, "new_password": "new-password-123"},
+        )
+        assert r.status_code == 400
+        assert r.json()["detail"] == "Invalid, expired, or already-used token"

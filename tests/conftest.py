@@ -61,3 +61,26 @@ def client(setup_db):
         with TestClient(app) as c:
             yield c
     app.dependency_overrides.clear()
+
+
+AUTH_CLIENT_EMAIL = "fixture-user@example.com"
+AUTH_CLIENT_PASSWORD = "fixture-password-123"
+
+
+@pytest.fixture
+def auth_client(client):
+    """`client` con una sesión ya iniciada (cookie `access_token` seteada).
+
+    Registra y loguea un usuario de prueba (`AUTH_CLIENT_EMAIL`). Suficiente
+    para tests de login/logout/me; los escenarios owner-vs-foreign completos
+    se cubren en la Fase 4 (PR3) con más de un usuario.
+    """
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": AUTH_CLIENT_EMAIL, "password": AUTH_CLIENT_PASSWORD},
+    )
+    client.post(
+        "/api/v1/auth/login",
+        json={"email": AUTH_CLIENT_EMAIL, "password": AUTH_CLIENT_PASSWORD},
+    )
+    return client

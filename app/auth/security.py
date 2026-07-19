@@ -7,7 +7,9 @@ import direction is why this lives in `app/auth/` instead of
 `app/routers/auth.py` (see design.md "Auth module boundary").
 """
 
+import hashlib
 import os
+import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -19,11 +21,11 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import get_db
 
-_env = os.getenv("ENV", "local")
+IS_LOCAL_ENV = os.getenv("ENV", "local") == "local"
 _jwt_secret = os.getenv("JWT_SECRET_KEY")
 if _jwt_secret:
     JWT_SECRET_KEY = _jwt_secret
-elif _env == "local":
+elif IS_LOCAL_ENV:
     JWT_SECRET_KEY = "dev-insecure-secret-change-me-in-production-please"  # noqa: S105
 else:
     raise RuntimeError("JWT_SECRET_KEY must be set outside local development")
@@ -44,12 +46,26 @@ def hash_password(password: str) -> str:
     return str(_pwd_context.hash(password))
 
 
+DUMMY_PASSWORD_HASH = hash_password("dummy-password-for-timing-safety")
+
+
 def verify_password(password: str, hashed: str) -> bool:
     """Check a plaintext password against a stored bcrypt hash."""
     try:
         return bool(_pwd_context.verify(password, hashed))
     except (ValueError, UnknownHashError):
         return False
+
+
+def hash_reset_token(raw_token: str) -> str:
+    """Hash a raw reset token for safe storage and lookup."""
+    return hashlib.sha256(raw_token.encode()).hexdigest()
+
+
+def generate_reset_token() -> tuple[str, str]:
+    """Create a URL-safe reset token and its deterministic hash."""
+    raw_token = secrets.token_urlsafe(32)
+    return raw_token, hash_reset_token(raw_token)
 
 
 def create_access_token(
