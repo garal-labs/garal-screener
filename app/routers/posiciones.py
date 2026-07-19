@@ -1,10 +1,11 @@
 import asyncio
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.auth.security import get_owned_cartera
 from app.database import get_db
 from app.services import calculos, precios
 
@@ -12,16 +13,15 @@ router = APIRouter(prefix="/carteras", tags=["Posiciones"])
 
 
 @router.get("/{cartera_id}/resumen", response_model=schemas.ResumenCartera)
-async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
+async def resumen_cartera(
+    cartera: models.Cartera = Depends(get_owned_cartera),
+    db: Session = Depends(get_db),
+):
     """Posiciones con rentabilidades calculadas en tiempo real. Valores en EUR y moneda nativa."""
-    cartera = db.query(models.Cartera).filter(models.Cartera.id == cartera_id).first()
-    if not cartera:
-        raise HTTPException(status_code=404, detail="Cartera no encontrada")
-
     instrumentos = (
         db.query(models.Instrumento)
         .join(models.Movimiento)
-        .filter(models.Movimiento.cartera_id == cartera_id)
+        .filter(models.Movimiento.cartera_id == cartera.id)
         .distinct()
         .all()
     )
@@ -47,7 +47,7 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
             db.query(models.Movimiento)
             .filter(
                 models.Movimiento.instrumento_id == instrumento.id,
-                models.Movimiento.cartera_id == cartera_id,
+                models.Movimiento.cartera_id == cartera.id,
             )
             .all()
         )
@@ -117,21 +117,20 @@ async def resumen_cartera(cartera_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{cartera_id}/backfill-fx")
-async def backfill_fx(cartera_id: int, db: Session = Depends(get_db)):
+async def backfill_fx(
+    cartera: models.Cartera = Depends(get_owned_cartera),
+    db: Session = Depends(get_db),
+):
     """
     Rellena el tipo_cambio histórico para movimientos sin él.
     Solo afecta a instrumentos con moneda != EUR.
     Útil para corregir movimientos importados sin tipo de cambio.
     """
-    cartera = db.query(models.Cartera).filter(models.Cartera.id == cartera_id).first()
-    if not cartera:
-        raise HTTPException(status_code=404, detail="Cartera no encontrada")
-
     movimientos = (
         db.query(models.Movimiento)
         .join(models.Instrumento)
         .filter(
-            models.Movimiento.cartera_id == cartera_id,
+            models.Movimiento.cartera_id == cartera.id,
             models.Movimiento.tipo_cambio.is_(None),
             models.Instrumento.moneda.isnot(None),
             models.Instrumento.moneda != "EUR",
@@ -164,9 +163,19 @@ async def backfill_fx(cartera_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{cartera_id}/analisis", response_model=schemas.AnalisisCartera)
-async def analisis_cartera(cartera_id: int, db: Session = Depends(get_db)):
-    """Desglose por sector, pais, tipo y moneda."""
-    resumen = await resumen_cartera(cartera_id, db)
+async def analisis_cartera(
+    cartera: models.Cartera = Depends(get_owned_cartera),
+    db: Session = Depends(get_db),
+):
+    """Desglose por sector, pais, tipo y moneda.
+
+    Ownership is authorized once here via `get_owned_cartera`, then the
+    already-authorized `cartera` is forwarded straight into
+    `resumen_cartera` (called as a plain function, not through FastAPI's
+    routing) so the internal call path doesn't re-derive or skip
+    authorization — see design.md's note on this call site.
+    """
+    resumen = await resumen_cartera(cartera=cartera, db=db)
     posiciones = [p.model_dump() for p in resumen.posiciones]
 
     posiciones_enriquecidas = []

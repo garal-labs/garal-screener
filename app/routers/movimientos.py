@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.auth.security import get_current_user, get_owned_cartera
 from app.database import get_db
 from app.services import calculos, precios
 
@@ -10,14 +11,18 @@ router = APIRouter(tags=["Movimientos"])
 
 @router.post("/movimientos", response_model=schemas.MovimientoOut)
 async def crear_movimiento(
-    data: schemas.MovimientoCreate, db: Session = Depends(get_db)
+    data: schemas.MovimientoCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Crea un movimiento. Autodescubre el instrumento si no existe."""
-    cartera = (
-        db.query(models.Cartera).filter(models.Cartera.id == data.cartera_id).first()
-    )
-    if not cartera:
-        raise HTTPException(status_code=404, detail="Cartera no encontrada")
+    """Crea un movimiento. Autodescubre el instrumento si no existe.
+
+    `cartera_id` arrives in the request body (not the URL path), so the
+    shared `get_owned_cartera` dependency is invoked directly as a plain
+    function here instead of via `Depends()` — it still enforces the same
+    404-on-foreign/missing behavior as the path-based routes.
+    """
+    get_owned_cartera(cartera_id=data.cartera_id, current_user=current_user, db=db)
 
     isin_normalizado = data.isin.strip().upper()
     instrumento = (
@@ -83,20 +88,24 @@ async def crear_movimiento(
 @router.get(
     "/carteras/{cartera_id}/movimientos", response_model=list[schemas.MovimientoOut]
 )
-def listar_movimientos(cartera_id: int, db: Session = Depends(get_db)):
-    cartera = db.query(models.Cartera).filter(models.Cartera.id == cartera_id).first()
-    if not cartera:
-        raise HTTPException(status_code=404, detail="Cartera no encontrada")
+def listar_movimientos(
+    cartera: models.Cartera = Depends(get_owned_cartera),
+    db: Session = Depends(get_db),
+):
     return (
         db.query(models.Movimiento)
-        .filter(models.Movimiento.cartera_id == cartera_id)
+        .filter(models.Movimiento.cartera_id == cartera.id)
         .order_by(models.Movimiento.fecha.desc())
         .all()
     )
 
 
 @router.delete("/movimientos/{movimiento_id}")
-def eliminar_movimiento(movimiento_id: int, db: Session = Depends(get_db)):
+def eliminar_movimiento(
+    movimiento_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     mov = (
         db.query(models.Movimiento)
         .filter(models.Movimiento.id == movimiento_id)
@@ -104,6 +113,10 @@ def eliminar_movimiento(movimiento_id: int, db: Session = Depends(get_db)):
     )
     if not mov:
         raise HTTPException(status_code=404, detail="Movimiento no encontrado")
+    # Resolving through get_owned_cartera keeps the same 404-on-foreign
+    # behavior: a movimiento whose parent cartera isn't owned by the
+    # caller is treated as not found, never leaking that it exists.
+    get_owned_cartera(cartera_id=mov.cartera_id, current_user=current_user, db=db)
     db.delete(mov)
     db.commit()
     return {"ok": True}
