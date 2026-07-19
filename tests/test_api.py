@@ -7,9 +7,13 @@ Las llamadas externas (FMP, Anthropic) se mockean.
 import logging
 import re
 from contextlib import ExitStack
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+from app import models
+from app.auth.security import generate_reset_token
 
 BASE = "/api/v1"
 
@@ -620,6 +624,25 @@ class TestAuth:
         r = client.post(f"{AUTH_BASE}/register", json=payload)
         assert r.status_code == 400
 
+    def test_register_password_length_boundaries(self, client):
+        r_short = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "short-pass@example.com", "password": "1234567"},
+        )
+        r_long = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "long-pass@example.com", "password": "x" * 73},
+        )
+        assert r_short.status_code == 422
+        assert r_long.status_code == 422
+
+    def test_register_invalid_email_format_returns_422(self, client):
+        r = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "not-an-email", "password": "supersecret1"},
+        )
+        assert r.status_code == 422
+
     def test_login_wrong_password_rejected(self, client):
         client.post(
             f"{AUTH_BASE}/register",
@@ -726,3 +749,29 @@ class TestPasswordReset:
             json={"token": "not-a-real-token", "new_password": "whatever-new-1"},
         )
         assert r.status_code == 400
+
+    def test_reset_password_expired_token_rejected(self, client, db_session):
+        self._register(client)
+        user = (
+            db_session.query(models.User)
+            .filter(models.User.email == self.EMAIL)
+            .first()
+        )
+        assert user is not None
+
+        raw_token, token_hash = generate_reset_token()
+        db_session.add(
+            models.PasswordResetToken(
+                user_id=user.id,
+                token_hash=token_hash,
+                expires_at=datetime.now(UTC) - timedelta(minutes=1),
+            )
+        )
+        db_session.commit()
+
+        r = client.post(
+            f"{AUTH_BASE}/reset-password",
+            json={"token": raw_token, "new_password": "new-password-123"},
+        )
+        assert r.status_code == 400
+        assert r.json()["detail"] == "Invalid, expired, or already-used token"
