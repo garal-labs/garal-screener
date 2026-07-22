@@ -33,3 +33,7 @@ Thumbs.db
 
 # Alembic
 alembic/versions/*.pyc
+
+# OpenSpec live spec tree (implementation-only working copy; the archive
+# under openspec/changes/archive/ is the versioned audit trail)
+openspec/specs/
