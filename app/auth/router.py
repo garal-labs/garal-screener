@@ -150,7 +150,7 @@ def forgot_password(data: schemas.ForgotPasswordRequest, db: Session = Depends(g
         db.add(reset_token)
         db.commit()
         if IS_LOCAL_ENV:
-            logger.info(
+            logger.warning(
                 "Password reset requested for user_id=%s — dev reset link: "
                 "/reset-password?token=%s",
                 user.id,
