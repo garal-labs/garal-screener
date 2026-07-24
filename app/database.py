@@ -30,7 +30,11 @@ def get_db():
 
 
 def init_db():
-    """Crea todas las tablas si no existen (útil en desarrollo/SQLite)."""
+    """Crea todas las tablas si no existen. Solo para SQLite local — en
+    Postgres el esquema lo gestiona Alembic (`alembic upgrade head`)."""
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
     from app.models import Base  # import local para evitar circular
 
     Base.metadata.create_all(bind=engine)
