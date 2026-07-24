@@ -6,12 +6,14 @@ Toda la lógica de FIFO, plusvalías y rentabilidades vive aquí.
 from collections import deque
 from typing import Any
 
+from app.models import Movimiento
+
 
 class VentaInvalidaError(ValueError):
     """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
 
 
-def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
+def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
     """
     Dado una lista de movimientos ordenados por fecha ASC,
     calcula la posición actual usando el método FIFO.
@@ -28,17 +30,23 @@ def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
     plusvalia_realizada = 0.0
 
     # Orden determinístico: fecha ASC, id ASC para desempate intradía
-    for mov in sorted(movimientos, key=lambda m: (m.fecha, m.id)):
-        precio_eur = _precio_en_eur(mov)
-        comision = mov.comision or 0.0
+    for movimientos_ordenados in sorted(movimientos, key=lambda m: (m.fecha, m.id)):
+        precio_eur = _precio_en_eur(movimientos_ordenados)
+        comision = movimientos_ordenados.comision or 0.0
 
-        if mov.tipo == "compra":
+        if movimientos_ordenados.tipo == "compra":
             # Añadimos lote: precio unitario incluyendo comisión prorrateada
-            precio_unitario = precio_eur + (comision / mov.cantidad)
-            lotes.append([mov.cantidad, precio_unitario, mov.fecha])
+            precio_unitario = precio_eur + (comision / movimientos_ordenados.cantidad)
+            lotes.append(
+                [
+                    movimientos_ordenados.cantidad,
+                    precio_unitario,
+                    movimientos_ordenados.fecha,
+                ]
+            )
 
-        elif mov.tipo == "venta":
-            cantidad_vender = mov.cantidad
+        elif movimientos_ordenados.tipo == "venta":
+            cantidad_vender = movimientos_ordenados.cantidad
             coste_vendido = 0.0
 
             while cantidad_vender > 0 and lotes:
@@ -59,12 +67,15 @@ def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
             # Si después del while todavía queda por vender, los datos son inconsistentes
             if cantidad_vender > 0:
                 raise VentaInvalidaError(
-                    f"Movimiento id={mov.id}: intento de vender {mov.cantidad} unidades "
+                    f"Movimiento id={movimientos_ordenados.id}: intento de vender {movimientos_ordenados.cantidad} unidades "
                     f"pero los lotes FIFO no tienen suficiente stock."
                 )
 
             # Ingreso de la venta en EUR menos comisión
-            ingreso_venta = (mov.precio * mov.cantidad * _tipo_cambio(mov)) - comision
+            # _precio_en_eur divide por tipo_cambio: precio_nativo / tc = EUR
+            ingreso_venta = (
+                _precio_en_eur(movimientos_ordenados) * movimientos_ordenados.cantidad
+            ) - comision
             plusvalia_realizada += ingreso_venta - coste_vendido
 
     # Calculamos posición actual desde lotes restantes
@@ -88,22 +99,66 @@ def calcular_posicion_fifo(movimientos: list[Any]) -> dict:
     }
 
 
-def calcular_plusvalia_latente(posicion: dict, precio_actual_eur: float) -> dict:
+def _precio_en_eur(mov) -> float:
     """
-    Con la posición FIFO calculada y el precio actual de mercado,
-    calcula la plusvalía latente (no realizada).
+    Convierte el precio del movimiento a EUR aplicando tipo de cambio.
+    Convenio: tipo_cambio sigue EURUSD=X → cuántas unidades de moneda por 1 EUR.
+    Para pasar precio nativo → EUR: precio_nativo / tipo_cambio.
+    """
+    return float(mov.precio) / _tipo_cambio(mov)
+
+
+def _tipo_cambio(mov) -> float:
+    """
+    Devuelve el tipo de cambio a aplicar.
+    Si no se ha introducido, asume 1.0 (misma moneda que EUR o ya en EUR).
+    """
+    # is not None para no confundir tipo_cambio=0.0 (inválido) con ausente
+    return float(mov.tipo_cambio) if mov.tipo_cambio is not None else 1.0
+
+
+def calcular_plusvalia_latente(
+    posicion: dict,
+    precio_actual_nativo: float,
+    fx_actual: float = 1.0,
+) -> dict:
+    """
+    Con la posición FIFO calculada, el precio actual en moneda nativa y el
+    tipo de cambio actual, calcula la plusvalía latente en EUR y moneda nativa.
+
+    Args:
+        posicion: dict devuelto por calcular_posicion_fifo (coste_total en EUR).
+        precio_actual_nativo: precio de mercado en la moneda nativa del instrumento.
+        fx_actual: tipo de cambio EUR/moneda (convenio Yahoo Finance: EURUSD=X).
+            Ej. fx_actual=1.085 significa 1 EUR = 1.085 USD.
+            Para convertir a EUR: precio_nativo / fx_actual.
+            Para EUR puro: fx_actual=1.0 (default, sin conversión).
+
+    Returns:
+        Dict con valor_actual_eur, valor_actual_nativo y métricas en EUR.
+        valor_actual es alias de valor_actual_eur para backwards-compatibility.
     """
     cantidad = posicion["cantidad_actual"]
-    coste = posicion["coste_total"]
-    valor_actual = round(precio_actual_eur * cantidad, 2)
-    plusvalia_latente = round(valor_actual - coste, 2)
+    coste = posicion[
+        "coste_total"
+    ]  # siempre en EUR (FIFO aplica tipo_cambio histórico)
+
+    valor_actual_nativo = round(precio_actual_nativo * cantidad, 2)
+    # fx_actual=1.0 para EUR → sin conversión; para USD: divide por fx
+    valor_actual_eur = round(precio_actual_nativo / fx_actual * cantidad, 2)
+
+    plusvalia_latente = round(valor_actual_eur - coste, 2)
     rentabilidad_pct = round((plusvalia_latente / coste * 100), 2) if coste > 0 else 0.0
 
     return {
-        "valor_actual": valor_actual,
+        "valor_actual": valor_actual_eur,  # backwards-compat alias
+        "valor_actual_eur": valor_actual_eur,
+        "valor_actual_nativo": valor_actual_nativo,
         "plusvalia_latente": plusvalia_latente,
         "rentabilidad_pct": rentabilidad_pct,
-        "plusvalia_total": round(plusvalia_latente + posicion["plusvalia_realizada"], 2),
+        "plusvalia_total": round(
+            plusvalia_latente + posicion["plusvalia_realizada"], 2
+        ),
     }
 
 
@@ -113,13 +168,17 @@ def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
     Cada posición debe tener: valor_actual, coste_total, plusvalia_latente,
     plusvalia_realizada, rentabilidad_pct.
     """
-    valor_total = sum(p.get("valor_actual") or p.get("coste_total") or 0 for p in posiciones)
+    valor_total = sum(
+        p.get("valor_actual") or p.get("coste_total") or 0 for p in posiciones
+    )
     coste_total = sum(p.get("coste_total", 0) for p in posiciones)
     plusvalia_latente = sum(p.get("plusvalia_latente") or 0 for p in posiciones)
     plusvalia_realizada = sum(p.get("plusvalia_realizada", 0) for p in posiciones)
     plusvalia_total = plusvalia_latente + plusvalia_realizada
     # Rentabilidad sobre coste total (latente + realizada)
-    rentabilidad_total_pct = round((plusvalia_total / coste_total * 100), 2) if coste_total > 0 else 0.0
+    rentabilidad_total_pct = (
+        round((plusvalia_total / coste_total * 100), 2) if coste_total > 0 else 0.0
+    )
 
     return {
         "valor_total": round(valor_total, 2),
@@ -128,7 +187,9 @@ def calcular_resumen_cartera(posiciones: list[dict]) -> dict:
         "plusvalia_realizada": round(plusvalia_realizada, 2),
         "plusvalia_total": round(plusvalia_total, 2),
         "rentabilidad_pct": rentabilidad_total_pct,
-        "num_posiciones": len([p for p in posiciones if p.get("cantidad_actual", 0) > 0]),
+        "num_posiciones": len(
+            [p for p in posiciones if p.get("cantidad_actual", 0) > 0]
+        ),
     }
 
 
@@ -160,19 +221,3 @@ def agrupar_por_campo(posiciones: list[dict], campo: str) -> list[dict]:
 
 
 # ── Helpers privados ──────────────────────────────────────────────────────────
-
-
-def _tipo_cambio(mov) -> float:
-    """
-    Devuelve el tipo de cambio a aplicar.
-    Si no se ha introducido, asume 1.0 (misma moneda que EUR o ya en EUR).
-    """
-    # is not None para no confundir tipo_cambio=0.0 (inválido) con ausente
-    return float(mov.tipo_cambio) if mov.tipo_cambio is not None else 1.0
-
-
-def _precio_en_eur(mov) -> float:
-    """
-    Convierte el precio del movimiento a EUR aplicando tipo de cambio.
-    """
-    return float(mov.precio) * _tipo_cambio(mov)

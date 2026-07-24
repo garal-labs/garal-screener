@@ -61,3 +61,60 @@ def client(setup_db):
         with TestClient(app) as c:
             yield c
     app.dependency_overrides.clear()
+
+
+AUTH_CLIENT_EMAIL = "fixture-user@example.com"
+AUTH_CLIENT_PASSWORD = "fixture-password-123"
+
+
+@pytest.fixture
+def auth_client(client):
+    """`client` con una sesión ya iniciada (cookie `access_token` seteada).
+
+    Registra y loguea un usuario de prueba (`AUTH_CLIENT_EMAIL`).
+    """
+    client.post(
+        "/api/v1/auth/register",
+        json={"email": AUTH_CLIENT_EMAIL, "password": AUTH_CLIENT_PASSWORD},
+    )
+    client.post(
+        "/api/v1/auth/login",
+        json={"email": AUTH_CLIENT_EMAIL, "password": AUTH_CLIENT_PASSWORD},
+    )
+    return client
+
+
+SECOND_AUTH_CLIENT_EMAIL = "fixture-user-2@example.com"
+SECOND_AUTH_CLIENT_PASSWORD = "fixture-password-456"
+
+
+@pytest.fixture
+def second_auth_client(client):
+    """A second authenticated `TestClient`, different user, same app/DB.
+
+    Used for owner-vs-foreign authorization scenarios (Phase 4, PR3): each
+    `TestClient` instance keeps its own cookie jar, so this session never
+    shares its `access_token` with `auth_client`, even though both point at
+    the same in-memory DB and dependency overrides via the shared `app`
+    object (set up by the `client` fixture this one depends on).
+
+    `main.init_db` is patched here as well so this fixture never relies on
+    outer fixture ordering to avoid touching the real database URL.
+    """
+    with patch("main.init_db"):
+        with TestClient(app) as other:
+            other.post(
+                "/api/v1/auth/register",
+                json={
+                    "email": SECOND_AUTH_CLIENT_EMAIL,
+                    "password": SECOND_AUTH_CLIENT_PASSWORD,
+                },
+            )
+            other.post(
+                "/api/v1/auth/login",
+                json={
+                    "email": SECOND_AUTH_CLIENT_EMAIL,
+                    "password": SECOND_AUTH_CLIENT_PASSWORD,
+                },
+            )
+            yield other

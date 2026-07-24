@@ -1,6 +1,37 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+# -- User / Auth ----------------------------------------------------------------
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+    nombre: str | None = None
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: EmailStr
+    nombre: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=72)
+
 
 # -- Cartera ------------------------------------------------------------------
 
@@ -89,10 +120,16 @@ class PosicionOut(BaseModel):
     precio_medio: float
     plusvalia_realizada: float
     precio_actual: float | None = None
+    # Campos existentes (backwards-compat — valor_actual == valor_actual_eur)
     valor_actual: float | None = None
     plusvalia_latente: float | None = None
     rentabilidad_pct: float | None = None
     plusvalia_total: float | None = None
+    # Dual-currency
+    valor_actual_eur: float | None = None
+    valor_actual_nativo: float | None = None
+    moneda_nativa: str | None = None
+    fx_actual: float | None = None
 
 
 # -- Resumen cartera ----------------------------------------------------------

@@ -9,8 +9,6 @@ pytest-mock>=3.12          # mocking cómodo
  
 # Linting & formato
 ruff>=0.4
-black>=24.0
-isort>=5.13
 mypy>=1.9
  
 # Seguridad
