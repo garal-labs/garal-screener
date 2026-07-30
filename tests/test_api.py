@@ -36,17 +36,19 @@ class TestCarteras:
         assert r.status_code == 200
         assert r.json()["descripcion"] == "Inversiones largo plazo"
 
-    def test_listar_carteras_vacio(self, auth_client):
+    def test_listar_carteras_incluye_la_por_defecto(self, auth_client):
+        # Registration auto-creates "Mi Cartera Principal" — a fresh user is
+        # never truly cartera-less.
         r = auth_client.get(f"{BASE}/carteras")
         assert r.status_code == 200
-        assert r.json() == []
+        assert [c["nombre"] for c in r.json()] == ["Mi Cartera Principal"]
 
     def test_listar_carteras_con_datos(self, auth_client):
         auth_client.post(f"{BASE}/carteras", json={"nombre": "A"})
         auth_client.post(f"{BASE}/carteras", json={"nombre": "B"})
         r = auth_client.get(f"{BASE}/carteras")
         assert r.status_code == 200
-        assert len(r.json()) == 2
+        assert len(r.json()) == 3  # default cartera + A + B
 
     def test_eliminar_cartera(self, auth_client):
         cartera_id = auth_client.post(f"{BASE}/carteras", json={"nombre": "X"}).json()[
@@ -55,9 +57,9 @@ class TestCarteras:
         r = auth_client.delete(f"{BASE}/carteras/{cartera_id}")
         assert r.status_code == 200
         assert r.json()["ok"] is True
-        # Ya no existe
+        # "X" is gone, only the default cartera from registration remains
         carteras = auth_client.get(f"{BASE}/carteras").json()
-        assert len(carteras) == 0
+        assert [c["nombre"] for c in carteras] == ["Mi Cartera Principal"]
 
     def test_eliminar_cartera_inexistente(self, auth_client):
         r = auth_client.delete(f"{BASE}/carteras/9999")
@@ -630,7 +632,9 @@ class TestOwnershipAuthorization:
         second_auth_client.post(f"{BASE}/carteras", json={"nombre": "Theirs"})
         r = auth_client.get(f"{BASE}/carteras")
         assert r.status_code == 200
-        assert [c["nombre"] for c in r.json()] == ["Mine"]
+        # Each user's own default "Mi Cartera Principal" (from registration)
+        # plus what they created — never the other user's carteras.
+        assert [c["nombre"] for c in r.json()] == ["Mi Cartera Principal", "Mine"]
 
     def test_delete_foreign_cartera_returns_404(self, auth_client, second_auth_client):
         foreign_id = second_auth_client.post(
@@ -761,6 +765,24 @@ class TestAuth:
         r = client.get(f"{AUTH_BASE}/me")
         assert r.status_code == 200
         assert r.json()["email"] == "new-user@example.com"
+
+    def test_register_creates_default_cartera(self, client):
+        r = client.post(
+            f"{AUTH_BASE}/register",
+            json={"email": "fresh-user@example.com", "password": "supersecret1"},
+        )
+        assert r.status_code == 201
+
+        client.post(
+            f"{AUTH_BASE}/login",
+            json={"email": "fresh-user@example.com", "password": "supersecret1"},
+        )
+
+        r = client.get(f"{BASE}/carteras")
+        assert r.status_code == 200
+        carteras = r.json()
+        assert len(carteras) == 1
+        assert carteras[0]["nombre"] == "Mi Cartera Principal"
 
     def test_register_duplicate_email_rejected(self, client):
         payload = {"email": "dup@example.com", "password": "supersecret1"}
