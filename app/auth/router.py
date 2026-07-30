@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 RESET_TOKEN_TTL_MINUTES = 60
+DEFAULT_CARTERA_NOMBRE = "Mi Cartera Principal"
 
 
 def _cookie_secure() -> bool:
@@ -86,6 +87,12 @@ def register(data: schemas.UserCreate, db: Session = Depends(get_db)):
         nombre=data.nombre,
     )
     db.add(user)
+    # `owner=user` (not `user_id=user.id`) so SQLAlchemy resolves the FK at
+    # flush time — `user.id` doesn't exist yet since `user` is still pending.
+    # Added to the same session/commit as `user` so account + starter
+    # cartera land atomically: a rollback on duplicate email leaves neither.
+    cartera = models.Cartera(nombre=DEFAULT_CARTERA_NOMBRE, owner=user)
+    db.add(cartera)
     try:
         db.commit()
     except IntegrityError as exc:
