@@ -14,7 +14,9 @@ from app.services.calculos import (
     agrupar_por_campo,
     calcular_plusvalia_latente,
     calcular_posicion_fifo,
+    calcular_rentabilidad_periodo,
     calcular_resumen_cartera,
+    fecha_inicio_periodo,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -365,3 +367,94 @@ class TestAgruparPorCampo:
         ]
         r = agrupar_por_campo(posiciones, "pais")
         assert r[0]["nombre"] == "EEUU"
+
+
+# ── fecha_inicio_periodo ──────────────────────────────────────────────────────
+
+
+class TestFechaInicioPeriodo:
+    HOY = date(2026, 8, 1)
+
+    def test_ytd(self):
+        assert fecha_inicio_periodo("ytd", self.HOY) == date(2026, 1, 1)
+
+    def test_1m(self):
+        assert fecha_inicio_periodo("1m", self.HOY) == date(2026, 7, 1)
+
+    def test_3m(self):
+        assert fecha_inicio_periodo("3m", self.HOY) == date(2026, 5, 1)
+
+    def test_1y(self):
+        assert fecha_inicio_periodo("1y", self.HOY) == date(2025, 8, 1)
+
+    def test_3y_cruza_decada(self):
+        assert fecha_inicio_periodo("3y", self.HOY) == date(2023, 8, 1)
+
+    def test_clamp_fin_de_mes_a_mes_mas_corto(self):
+        """31 marzo - 1m debe caer en el último día de febrero (28/29), no el 31."""
+        r = fecha_inicio_periodo("1m", date(2026, 3, 31))
+        assert r == date(2026, 2, 28)
+
+    def test_periodo_invalido_lanza_error(self):
+        with pytest.raises(ValueError):
+            fecha_inicio_periodo("5m", self.HOY)
+
+
+# ── calcular_rentabilidad_periodo ─────────────────────────────────────────────
+
+
+class TestCalcularRentabilidadPeriodo:
+    ANTES = date(2024, 1, 1)
+    FECHA_INICIO = date(2024, 6, 1)
+    EN_PERIODO = date(2024, 7, 1)
+
+    def test_posicion_previa_sin_movimientos_en_periodo(self):
+        movs = [compra(1, self.ANTES, 10, 100.0)]
+        r = calcular_rentabilidad_periodo(
+            movs, self.FECHA_INICIO, precio_inicio_eur=150.0, precio_actual_eur=180.0
+        )
+        assert r["cantidad_actual"] == 10
+        assert r["coste_total"] == 1500.0  # 10 * precio de inicio de periodo
+        assert r["valor_actual"] == 1800.0
+        assert r["plusvalia_latente"] == 300.0
+        assert r["rentabilidad_pct"] == pytest.approx(20.0)
+
+    def test_posicion_abierta_dentro_del_periodo_usa_precio_de_compra_real(self):
+        movs = [compra(1, self.EN_PERIODO, 5, 100.0)]
+        r = calcular_rentabilidad_periodo(
+            movs, self.FECHA_INICIO, precio_inicio_eur=None, precio_actual_eur=120.0
+        )
+        assert r["coste_total"] == 500.0
+        assert r["valor_actual"] == 600.0
+        assert r["rentabilidad_pct"] == pytest.approx(20.0)
+
+    def test_sin_precio_historico_devuelve_none(self):
+        movs = [compra(1, self.ANTES, 10, 100.0)]
+        r = calcular_rentabilidad_periodo(
+            movs, self.FECHA_INICIO, precio_inicio_eur=None, precio_actual_eur=180.0
+        )
+        assert r is None
+
+    def test_venta_dentro_del_periodo_de_lote_previo(self):
+        movs = [
+            compra(1, self.ANTES, 10, 100.0),
+            venta(2, self.EN_PERIODO, 4, 200.0),
+        ]
+        r = calcular_rentabilidad_periodo(
+            movs, self.FECHA_INICIO, precio_inicio_eur=150.0, precio_actual_eur=180.0
+        )
+        assert r["cantidad_actual"] == 6
+        assert r["coste_total"] == 900.0
+        assert r["plusvalia_realizada"] == 200.0  # (200*4) - (150*4)
+        assert r["valor_actual"] == 1080.0
+        assert r["plusvalia_latente"] == 180.0
+        assert r["plusvalia_total"] == 380.0
+        assert r["rentabilidad_pct"] == pytest.approx(380 / 900 * 100, abs=0.01)
+
+    def test_sin_actividad_cantidad_inicio_cero_y_sin_movimientos_periodo(self):
+        r = calcular_rentabilidad_periodo(
+            [], self.FECHA_INICIO, precio_inicio_eur=None, precio_actual_eur=None
+        )
+        assert r["cantidad_actual"] == 0
+        assert r["coste_total"] == 0.0
+        assert r["rentabilidad_pct"] == 0.0
