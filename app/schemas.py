@@ -120,12 +120,14 @@ class PosicionOut(BaseModel):
     precio_medio: float
     plusvalia_realizada: float
     precio_actual: float | None = None
-    # Campos existentes (backwards-compat — valor_actual == valor_actual_eur)
+    # Campos existentes (backwards-compat — valor_actual == valor_actual_eur, precio_actual == precio_actual_nativo)
     valor_actual: float | None = None
     plusvalia_latente: float | None = None
     rentabilidad_pct: float | None = None
     plusvalia_total: float | None = None
     # Dual-currency
+    precio_actual_eur: float | None = None
+    precio_actual_nativo: float | None = None
     valor_actual_eur: float | None = None
     valor_actual_nativo: float | None = None
     moneda_nativa: str | None = None
