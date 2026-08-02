@@ -74,10 +74,12 @@ async def resumen_cartera(
         )
 
         plusvalias = {}
+        precio_actual_eur = None
         if precio_actual is not None:
             plusvalias = calculos.calcular_plusvalia_latente(
                 posicion_fifo, precio_actual, fx_actual=fx
             )
+            precio_actual_eur = round(precio_actual / fx, 4)
 
         posiciones_out.append(
             schemas.PosicionOut(
@@ -92,6 +94,8 @@ async def resumen_cartera(
                 rentabilidad_pct=plusvalias.get("rentabilidad_pct"),
                 plusvalia_total=plusvalias.get("plusvalia_total"),
                 # Dual-currency
+                precio_actual_eur=precio_actual_eur,
+                precio_actual_nativo=precio_actual,
                 valor_actual_eur=plusvalias.get("valor_actual_eur"),
                 valor_actual_nativo=plusvalias.get("valor_actual_nativo"),
                 moneda_nativa=moneda,
