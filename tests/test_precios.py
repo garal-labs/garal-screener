@@ -17,7 +17,9 @@ from app.services.precios import (
     obtener_fx_batch,
     obtener_fx_by_date,
     obtener_precio_actual,
+    obtener_precio_by_date,
     obtener_precios_batch,
+    obtener_precios_by_date_batch,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -220,6 +222,68 @@ class TestObtenerFxHistorico:
             mock_ticker.return_value.history.return_value = df
             result = _fetch_fx_by_date("EURUSD=X", _date(2024, 1, 15))
         assert result == pytest.approx(1.085)
+
+
+# ── obtener_precio_by_date ────────────────────────────────────────────────────
+
+
+class TestObtenerPrecioHistorico:
+    @pytest.mark.asyncio
+    async def test_devuelve_float_cuando_hay_datos(self):
+        with patch("app.services.precios._fetch_precio_by_date", return_value=4100.0):
+            result = await obtener_precio_by_date("7751.T", _date(2024, 1, 15))
+        assert result == pytest.approx(4100.0)
+
+    @pytest.mark.asyncio
+    async def test_ticker_vacio_devuelve_none_sin_llamar_yfinance(self):
+        with patch("app.services.precios._fetch_precio_by_date") as mock_fetch:
+            result = await obtener_precio_by_date("", _date(2024, 1, 15))
+        assert result is None
+        mock_fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_devuelve_none_cuando_no_hay_datos(self):
+        with patch("app.services.precios._fetch_precio_by_date", return_value=None):
+            result = await obtener_precio_by_date("7751.T", _date(2024, 1, 15))
+        assert result is None
+
+    def test_fetch_dataframe_vacio_devuelve_none(self):
+        from app.services.precios import _fetch_precio_by_date
+
+        empty_df = pd.DataFrame({"Close": []})
+        with patch("yfinance.Ticker") as mock_ticker:
+            mock_ticker.return_value.history.return_value = empty_df
+            result = _fetch_precio_by_date("7751.T", _date(2024, 1, 15))
+        assert result is None
+
+    def test_fetch_devuelve_primer_cierre(self):
+        from app.services.precios import _fetch_precio_by_date
+
+        df = pd.DataFrame({"Close": [4100.0, 4150.0]})
+        with patch("yfinance.Ticker") as mock_ticker:
+            mock_ticker.return_value.history.return_value = df
+            result = _fetch_precio_by_date("7751.T", _date(2024, 1, 15))
+        assert result == pytest.approx(4100.0)
+
+
+class TestObtenerPreciosByDateBatch:
+    @pytest.mark.asyncio
+    async def test_lista_vacia_devuelve_dict_vacio(self):
+        result = await obtener_precios_by_date_batch([], _date(2024, 1, 15))
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_agrupa_resultados_validos_e_ignora_fallos(self):
+        async def fake_fetch(ticker, fecha):
+            return 100.0 if ticker == "AAPL" else None
+
+        with patch(
+            "app.services.precios.obtener_precio_by_date", side_effect=fake_fetch
+        ):
+            result = await obtener_precios_by_date_batch(
+                ["AAPL", "BAD"], _date(2024, 1, 15)
+            )
+        assert result == {"AAPL": 100.0}
 
 
 # ── obtener_fx_actual ─────────────────────────────────────────────────────────

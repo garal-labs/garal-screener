@@ -3,20 +3,60 @@ Servicio de cálculos financieros.
 Toda la lógica de FIFO, plusvalías y rentabilidades vive aquí.
 """
 
+import calendar
 from collections import deque
+from datetime import date
 from typing import Any
 
 from app.models import Movimiento
+
+PERIODOS_VALIDOS = {"1m", "2m", "3m", "6m", "1y", "2y", "3y", "ytd"}
 
 
 class VentaInvalidaError(ValueError):
     """Se lanza cuando se intenta vender más de lo disponible en los lotes FIFO."""
 
 
-def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
+def fecha_inicio_periodo(periodo: str, hoy: date | None = None) -> date:
+    """
+    Calcula la fecha de inicio de un periodo de rentabilidad relativo a hoy.
+    Periodos soportados: 1m, 2m, 3m, 6m, 1y, 2y, 3y, ytd.
+    """
+    if periodo not in PERIODOS_VALIDOS:
+        raise ValueError(
+            f"Periodo inválido: {periodo!r}. Usa uno de {sorted(PERIODOS_VALIDOS)}."
+        )
+
+    hoy = hoy or date.today()
+
+    if periodo == "ytd":
+        return date(hoy.year, 1, 1)
+
+    meses_atras = {"1m": 1, "2m": 2, "3m": 3, "6m": 6, "1y": 12, "2y": 24, "3y": 36}[
+        periodo
+    ]
+    total_meses = hoy.year * 12 + (hoy.month - 1) - meses_atras
+    año, mes = divmod(total_meses, 12)
+    mes += 1
+    dia = min(hoy.day, calendar.monthrange(año, mes)[1])
+    return date(año, mes, dia)
+
+
+def calcular_posicion_fifo(
+    movimientos: list[Movimiento], lote_inicial: dict | None = None
+) -> dict:
     """
     Dado una lista de movimientos ordenados por fecha ASC,
     calcula la posición actual usando el método FIFO.
+
+    Args:
+        movimientos: movimientos a procesar (compras/ventas).
+        lote_inicial: lote sintético opcional que se añade a la cola FIFO
+            antes de procesar `movimientos`, con forma
+            {"cantidad": float, "precio_eur": float, "fecha": date}.
+            Se usa para calcular rentabilidad de un periodo: representa las
+            acciones que ya se tenían al inicio del periodo, valoradas al
+            precio de mercado de esa fecha en vez de su coste de compra real.
 
     Devuelve:
         cantidad_actual     → acciones/participaciones que tienes ahora
@@ -27,6 +67,14 @@ def calcular_posicion_fifo(movimientos: list[Movimiento]) -> dict:
     """
     # Cola FIFO: cada elemento es [cantidad_restante, precio_eur, fecha]
     lotes: deque[list[Any]] = deque()
+    if lote_inicial and lote_inicial["cantidad"] > 0:
+        lotes.append(
+            [
+                lote_inicial["cantidad"],
+                lote_inicial["precio_eur"],
+                lote_inicial["fecha"],
+            ]
+        )
     plusvalia_realizada = 0.0
 
     # Orden determinístico: fecha ASC, id ASC para desempate intradía
@@ -159,6 +207,70 @@ def calcular_plusvalia_latente(
         "plusvalia_total": round(
             plusvalia_latente + posicion["plusvalia_realizada"], 2
         ),
+    }
+
+
+def calcular_rentabilidad_periodo(
+    movimientos: list[Movimiento],
+    fecha_inicio,
+    precio_inicio_eur: float | None,
+    precio_actual_eur: float | None,
+) -> dict | None:
+    """
+    Rentabilidad de una posición durante un periodo [fecha_inicio, hoy].
+
+    Las acciones que ya se tenían antes de `fecha_inicio` se valoran a
+    `precio_inicio_eur` (precio de mercado en esa fecha) en vez de a su coste
+    de compra real; las compradas dentro del periodo usan su precio de compra
+    real. Así el "coste" del periodo refleja el capital en juego al empezar
+    a contar, igual que hacen la mayoría de brokers para rentabilidad por
+    rango de fechas.
+
+    Devuelve None si la posición ya existía antes del periodo pero no
+    tenemos precio histórico para valorarla (dato no disponible).
+    """
+    movs_antes = [m for m in movimientos if m.fecha < fecha_inicio]
+    movs_periodo = [m for m in movimientos if m.fecha >= fecha_inicio]
+
+    cantidad_inicio = calcular_posicion_fifo(movs_antes)["cantidad_actual"]
+
+    if cantidad_inicio > 0 and precio_inicio_eur is None:
+        return None
+
+    lote_inicial = (
+        {
+            "cantidad": cantidad_inicio,
+            "precio_eur": precio_inicio_eur,
+            "fecha": fecha_inicio,
+        }
+        if cantidad_inicio > 0
+        else None
+    )
+    posicion = calcular_posicion_fifo(movs_periodo, lote_inicial=lote_inicial)
+
+    cantidad_actual = posicion["cantidad_actual"]
+    coste_total = posicion["coste_total"]
+    plusvalia_realizada = posicion["plusvalia_realizada"]
+
+    valor_actual = None
+    plusvalia_latente = None
+    if cantidad_actual > 0 and precio_actual_eur is not None:
+        valor_actual = round(cantidad_actual * precio_actual_eur, 2)
+        plusvalia_latente = round(valor_actual - coste_total, 2)
+
+    plusvalia_total = round((plusvalia_latente or 0.0) + plusvalia_realizada, 2)
+    rentabilidad_pct = (
+        round(plusvalia_total / coste_total * 100, 2) if coste_total > 0 else 0.0
+    )
+
+    return {
+        "cantidad_actual": cantidad_actual,
+        "coste_total": coste_total,
+        "valor_actual": valor_actual,
+        "plusvalia_latente": plusvalia_latente,
+        "plusvalia_realizada": round(plusvalia_realizada, 2),
+        "plusvalia_total": plusvalia_total,
+        "rentabilidad_pct": rentabilidad_pct,
     }
 
 

@@ -120,12 +120,14 @@ class PosicionOut(BaseModel):
     precio_medio: float
     plusvalia_realizada: float
     precio_actual: float | None = None
-    # Campos existentes (backwards-compat — valor_actual == valor_actual_eur)
+    # Campos existentes (backwards-compat — valor_actual == valor_actual_eur, precio_actual == precio_actual_nativo)
     valor_actual: float | None = None
     plusvalia_latente: float | None = None
     rentabilidad_pct: float | None = None
     plusvalia_total: float | None = None
     # Dual-currency
+    precio_actual_eur: float | None = None
+    precio_actual_nativo: float | None = None
     valor_actual_eur: float | None = None
     valor_actual_nativo: float | None = None
     moneda_nativa: str | None = None
@@ -145,6 +147,37 @@ class ResumenCartera(BaseModel):
     rentabilidad_pct: float
     num_posiciones: int
     posiciones: list[PosicionOut]
+
+
+# -- Rentabilidad por periodo --------------------------------------------------
+
+
+class PosicionRentabilidadOut(BaseModel):
+    instrumento: InstrumentoOut
+    cantidad_actual: float
+    coste_total: float
+    valor_actual: float | None = None
+    plusvalia_latente: float | None = None
+    plusvalia_realizada: float
+    plusvalia_total: float
+    rentabilidad_pct: float
+    moneda_nativa: str | None = None
+
+
+class RentabilidadCartera(BaseModel):
+    periodo: str
+    fecha_inicio: date
+    fecha_fin: date
+    valor_total: float
+    coste_total: float
+    plusvalia_latente: float
+    plusvalia_realizada: float
+    plusvalia_total: float
+    rentabilidad_pct: float
+    posiciones: list[PosicionRentabilidadOut]
+    # Tickers de posiciones que ya se tenían al inicio del periodo pero de
+    # las que no se pudo obtener precio histórico (excluidas del cálculo)
+    tickers_sin_dato: list[str]
 
 
 # -- Analisis / agrupaciones --------------------------------------------------

@@ -78,15 +78,19 @@ MOCK_IA = {
 }
 
 
-def mock_precios(fx_rates=None):
+def mock_precios(fx_rates=None, precios_historicos=None):
     """Contexto que parchea las llamadas externas de precios/yfinance.
 
     Args:
         fx_rates: dict opcional con tipos de cambio a simular, ej. {"USD": 1.085}.
             Por defecto {} → fx fallback 1.0 para todas las monedas (comportamiento anterior).
+        precios_historicos: dict opcional con precios históricos a simular para
+            /rentabilidad, ej. {"AAPL": 100.0}. Por defecto {"AAPL": 100.0}.
     """
     if fx_rates is None:
         fx_rates = {}
+    if precios_historicos is None:
+        precios_historicos = {"AAPL": 100.0}
 
     stack = ExitStack()
     stack.enter_context(
@@ -99,6 +103,7 @@ def mock_precios(fx_rates=None):
         patch.multiple(
             "app.routers.posiciones.precios",
             obtener_precios_batch=AsyncMock(return_value={"AAPL": 150.0}),
+            obtener_precios_by_date_batch=AsyncMock(return_value=precios_historicos),
             obtener_fx_batch=AsyncMock(return_value=fx_rates),
             obtener_fx_by_date=AsyncMock(return_value=1.085),
         )
@@ -366,6 +371,73 @@ class TestResumenCartera:
         assert data["num_posiciones"] == 0
         # Pero la plusvalía realizada sí debe estar: 10*(120-100) = 200
         assert data["plusvalia_realizada"] == pytest.approx(200.0, abs=0.01)
+
+
+# ── Rentabilidad por periodo ──────────────────────────────────────────────────
+
+
+class TestRentabilidadPeriodo:
+    def _setup_cartera_con_compra(self, client, fecha="2024-01-15", cantidad=10):
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()[
+            "id"
+        ]
+        with mock_precios():
+            client.post(
+                f"{BASE}/movimientos",
+                json={
+                    "cartera_id": cartera_id,
+                    "isin": "US0378331005",
+                    "tipo": "compra",
+                    "fecha": fecha,
+                    "cantidad": cantidad,
+                    "precio": 100.0,
+                },
+            )
+        return cartera_id
+
+    def test_rentabilidad_posicion_previa_al_periodo(self, auth_client):
+        cartera_id = self._setup_cartera_con_compra(auth_client)
+        with mock_precios(precios_historicos={"AAPL": 100.0}):
+            r = auth_client.get(
+                f"{BASE}/carteras/{cartera_id}/rentabilidad", params={"periodo": "1y"}
+            )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["periodo"] == "1y"
+        assert len(data["posiciones"]) == 1
+        # precio histórico 100 USD / fx histórico mock 1.085 = 92.1659 EUR/acción
+        assert data["coste_total"] == pytest.approx(921.66, abs=0.01)
+        assert data["valor_total"] == pytest.approx(1500.0)  # 10 * precio mock actual
+        assert data["plusvalia_latente"] == pytest.approx(578.34, abs=0.01)
+        assert data["rentabilidad_pct"] == pytest.approx(62.75, abs=0.01)
+        assert data["tickers_sin_dato"] == []
+
+    def test_rentabilidad_periodo_invalido(self, auth_client):
+        cartera_id = auth_client.post(
+            f"{BASE}/carteras", json={"nombre": "Test"}
+        ).json()["id"]
+        r = auth_client.get(
+            f"{BASE}/carteras/{cartera_id}/rentabilidad", params={"periodo": "5m"}
+        )
+        assert r.status_code == 400
+
+    def test_rentabilidad_sin_precio_historico_va_a_tickers_sin_dato(self, auth_client):
+        cartera_id = self._setup_cartera_con_compra(auth_client)
+        with mock_precios(precios_historicos={}):
+            r = auth_client.get(
+                f"{BASE}/carteras/{cartera_id}/rentabilidad", params={"periodo": "1y"}
+            )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["posiciones"] == []
+        assert data["tickers_sin_dato"] == ["AAPL"]
+
+    def test_rentabilidad_cartera_inexistente(self, auth_client):
+        with mock_precios():
+            r = auth_client.get(
+                f"{BASE}/carteras/9999/rentabilidad", params={"periodo": "1y"}
+            )
+        assert r.status_code == 404
 
 
 # ── Instrumentos ──────────────────────────────────────────────────────────────
