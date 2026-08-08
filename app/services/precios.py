@@ -233,6 +233,52 @@ async def _obtener_precio_actual(ticker: str) -> float | None:
     return perfil.get("precio") if perfil else None
 
 
+async def obtener_precio_by_date(ticker: str, fecha: date) -> float | None:
+    """
+    Devuelve el precio de cierre de un ticker en una fecha concreta,
+    en la moneda nativa del instrumento. Devuelve None si yfinance no
+    tiene datos (ticker inválido, fecha muy antigua, mercado cerrado sin
+    margen suficiente...).
+    """
+    if not ticker:
+        return None
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _fetch_precio_by_date, ticker, fecha)
+
+
+def _fetch_precio_by_date(ticker: str, fecha: date) -> float | None:
+    """
+    Obtiene el precio de cierre para un ticker en una fecha concreta.
+    Añade hasta 5 días de margen para cubrir fines de semana y festivos.
+    """
+    try:
+        end = fecha + timedelta(days=5)
+        hist = yf.Ticker(ticker).history(start=str(fecha), end=str(end))
+        if hist.empty:
+            return None
+        return float(hist["Close"].iloc[0])
+    except Exception as e:
+        print(f"[Precio histórico] Error obteniendo {ticker} para {fecha}: {e}")
+        return None
+
+
+async def obtener_precios_by_date_batch(
+    tickers: list[str], fecha: date
+) -> dict[str, float]:
+    """Obtiene precios de cierre de múltiples tickers en una fecha, en paralelo."""
+    if not tickers:
+        return {}
+
+    resultados = await asyncio.gather(
+        *[obtener_precio_by_date(t, fecha) for t in tickers], return_exceptions=True
+    )
+    return {
+        ticker: precio
+        for ticker, precio in zip(tickers, resultados)
+        if isinstance(precio, float)
+    }  # noqa: B905
+
+
 # ── FX rate helpers ───────────────────────────────────────────────────────────
 
 

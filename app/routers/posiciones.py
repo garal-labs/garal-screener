@@ -1,7 +1,7 @@
 import asyncio
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -212,4 +212,166 @@ async def analisis_cartera(
             schemas.GrupoAnalisis(**g)
             for g in calculos.agrupar_por_campo(posiciones_enriquecidas, "moneda")
         ],
+    )
+
+
+@router.get("/{cartera_id}/rentabilidad", response_model=schemas.RentabilidadCartera)
+async def rentabilidad_periodo(
+    periodo: str,
+    cartera: models.Cartera = Depends(get_owned_cartera),
+    db: Session = Depends(get_db),
+):
+    """
+    Rentabilidad de la cartera en un rango de tiempo (1m, 2m, 3m, 6m, 1y, 2y, 3y, ytd).
+
+    Las posiciones que ya existían al inicio del periodo se valoran con su
+    precio de mercado en esa fecha (no su coste de compra original); las
+    posiciones abiertas dentro del periodo usan su precio de compra real.
+    """
+    if periodo not in calculos.PERIODOS_VALIDOS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"periodo inválido, usa uno de: {sorted(calculos.PERIODOS_VALIDOS)}",
+        )
+
+    hoy = date.today()
+    fecha_inicio = calculos.fecha_inicio_periodo(periodo, hoy)
+
+    instrumentos = (
+        db.query(models.Instrumento)
+        .join(models.Movimiento)
+        .filter(models.Movimiento.cartera_id == cartera.id)
+        .distinct()
+        .all()
+    )
+
+    tickers = [str(i.ticker) for i in instrumentos if i.ticker]
+    monedas_unicas = {
+        i.moneda.upper() for i in instrumentos if i.moneda and i.moneda.upper() != "EUR"
+    }
+
+    precios_actuales, precios_inicio, fx_actual_rates, fx_inicio_resultados = (
+        await asyncio.gather(
+            (
+                precios.obtener_precios_batch(tickers)
+                if tickers
+                else asyncio.sleep(0, result={})
+            ),
+            (
+                precios.obtener_precios_by_date_batch(tickers, fecha_inicio)
+                if tickers
+                else asyncio.sleep(0, result={})
+            ),
+            (
+                precios.obtener_fx_batch(list(monedas_unicas))
+                if monedas_unicas
+                else asyncio.sleep(0, result={})
+            ),
+            (
+                asyncio.gather(
+                    *[
+                        precios.obtener_fx_by_date(m, fecha_inicio)
+                        for m in monedas_unicas
+                    ],
+                    return_exceptions=True,
+                )
+                if monedas_unicas
+                else asyncio.sleep(0, result=[])
+            ),
+        )
+    )
+    fx_inicio_rates = {
+        moneda: fx
+        for moneda, fx in zip(monedas_unicas, fx_inicio_resultados)
+        if isinstance(fx, float)
+    }  # noqa: B905
+
+    posiciones_out = []
+    tickers_sin_dato = []
+
+    for instrumento in instrumentos:
+        movs = (
+            db.query(models.Movimiento)
+            .filter(
+                models.Movimiento.instrumento_id == instrumento.id,
+                models.Movimiento.cartera_id == cartera.id,
+            )
+            .all()
+        )
+
+        movs_antes = [m for m in movs if m.fecha < fecha_inicio]
+        movs_periodo = [m for m in movs if m.fecha >= fecha_inicio]
+        cantidad_inicio = calculos.calcular_posicion_fifo(movs_antes)["cantidad_actual"]
+        if cantidad_inicio == 0 and not movs_periodo:
+            continue  # sin actividad relevante en este periodo
+
+        moneda = instrumento.moneda
+
+        fx_actual = (
+            fx_actual_rates.get(moneda.upper(), 1.0)
+            if moneda and moneda.upper() != "EUR"
+            else 1.0
+        )
+        precio_actual_nativo = (
+            precios_actuales.get(str(instrumento.ticker))
+            if instrumento.ticker
+            else None
+        )
+        precio_actual_eur = (
+            round(precio_actual_nativo / fx_actual, 4)
+            if precio_actual_nativo is not None and fx_actual is not None
+            else None
+        )
+
+        fx_inicio = (
+            fx_inicio_rates.get(moneda.upper())
+            if moneda and moneda.upper() != "EUR"
+            else 1.0
+        )
+        precio_inicio_nativo = (
+            precios_inicio.get(str(instrumento.ticker)) if instrumento.ticker else None
+        )
+        precio_inicio_eur = (
+            round(precio_inicio_nativo / fx_inicio, 4)
+            if precio_inicio_nativo is not None and fx_inicio is not None
+            else None
+        )
+
+        resultado = calculos.calcular_rentabilidad_periodo(
+            movs, fecha_inicio, precio_inicio_eur, precio_actual_eur
+        )
+        if resultado is None:
+            tickers_sin_dato.append(instrumento.ticker or instrumento.isin)
+            continue
+
+        posiciones_out.append(
+            schemas.PosicionRentabilidadOut(
+                instrumento=schemas.InstrumentoOut.model_validate(instrumento),
+                cantidad_actual=resultado["cantidad_actual"],
+                coste_total=resultado["coste_total"],
+                valor_actual=resultado["valor_actual"],
+                plusvalia_latente=resultado["plusvalia_latente"],
+                plusvalia_realizada=resultado["plusvalia_realizada"],
+                plusvalia_total=resultado["plusvalia_total"],
+                rentabilidad_pct=resultado["rentabilidad_pct"],
+                moneda_nativa=moneda,
+            )
+        )
+
+    resumen = calculos.calcular_resumen_cartera(
+        [p.model_dump() for p in posiciones_out]
+    )
+
+    return schemas.RentabilidadCartera(
+        periodo=periodo,
+        fecha_inicio=fecha_inicio,
+        fecha_fin=hoy,
+        valor_total=resumen["valor_total"],
+        coste_total=resumen["coste_total"],
+        plusvalia_latente=resumen["plusvalia_latente"],
+        plusvalia_realizada=resumen["plusvalia_realizada"],
+        plusvalia_total=resumen["plusvalia_total"],
+        rentabilidad_pct=resumen["rentabilidad_pct"],
+        posiciones=posiciones_out,
+        tickers_sin_dato=tickers_sin_dato,
     )
