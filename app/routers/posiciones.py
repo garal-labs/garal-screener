@@ -67,6 +67,7 @@ async def resumen_cartera(
 
         # Resolver FX actual: 1.0 para EUR o moneda desconocida
         moneda = instrumento.moneda
+        # por que aqui se devuelve uno por defecto si luego ya hay un if else
         fx = (
             fx_rates.get(moneda.upper(), 1.0)
             if moneda and moneda.upper() != "EUR"
