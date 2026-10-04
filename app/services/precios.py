@@ -17,6 +17,7 @@ import asyncio
 from datetime import date, timedelta
 
 import httpx
+import pandas as pd
 import yfinance as yf
 
 _YAHOO_HEADERS = {
@@ -277,6 +278,74 @@ async def obtener_precios_by_date_batch(
         for ticker, precio in zip(tickers, resultados)
         if isinstance(precio, float)
     }  # noqa: B905
+
+
+# ── Series históricas mensuales ───────────────────────────────────────────────
+
+
+async def obtener_precios_mensuales_batch(
+    tickers: list[str], fecha_inicio: date, fecha_fin: date
+) -> dict[str, list[tuple[date, float]]]:
+    """
+    Obtiene las series de cierres mensuales ajustados (dividendos y splits)
+    de varios tickers con una única descarga de yfinance.
+
+    Devuelve {ticker: [(primer_dia_del_mes, cierre), ...]} ordenado por fecha,
+    en la moneda nativa de cada instrumento. Los tickers sin datos se omiten.
+    """
+    tickers_unicos = list(dict.fromkeys(t for t in tickers if t))
+    if not tickers_unicos:
+        return {}
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, _fetch_precios_mensuales, tickers_unicos, fecha_inicio, fecha_fin
+    )
+
+
+def _fetch_precios_mensuales(
+    tickers: list[str], fecha_inicio: date, fecha_fin: date
+) -> dict[str, list[tuple[date, float]]]:
+    """
+    Descarga (síncrona) los cierres mensuales ajustados de todos los tickers.
+
+    Las fechas se normalizan al primer día del mes para poder alinear
+    instrumentos de mercados distintos; si yfinance devuelve dos filas del
+    mismo mes (el mes en curso puede venir fechado a mitad de mes) prevalece
+    la más reciente. Los NaN se descartan.
+    """
+    try:
+        df = yf.download(
+            tickers,
+            start=str(fecha_inicio),
+            end=str(fecha_fin + timedelta(days=1)),
+            interval="1mo",
+            auto_adjust=True,
+            progress=False,
+            threads=True,
+        )
+    except Exception as e:
+        print(f"[Precios mensuales] Error descargando {tickers}: {e}")
+        return {}
+
+    if df is None or df.empty or "Close" not in df.columns.get_level_values(0):
+        return {}
+
+    cierres = df["Close"]
+    if isinstance(cierres, pd.Series):
+        # Un solo ticker con columnas planas: la Serie es directamente su cierre
+        cierres = cierres.to_frame(name=tickers[0])
+
+    resultado: dict[str, list[tuple[date, float]]] = {}
+    for ticker in tickers:
+        if ticker not in cierres.columns:
+            continue
+        por_mes: dict[date, float] = {}
+        for fecha, valor in cierres[ticker].dropna().sort_index().items():
+            marca = pd.Timestamp(fecha)
+            por_mes[date(marca.year, marca.month, 1)] = float(valor)
+        if por_mes:
+            resultado[ticker] = sorted(por_mes.items())
+    return resultado
 
 
 # ── FX rate helpers ───────────────────────────────────────────────────────────
