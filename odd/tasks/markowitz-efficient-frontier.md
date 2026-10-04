@@ -47,14 +47,21 @@ cannot be done for the real portfolio inside the product.
   minimum-variance portfolio, current portfolio (return, volatility, weights).
 - All frontier weights are in [0, 1] and sum to 1 (tolerance 1e-6).
 - Minimum-variance volatility <= volatility of every frontier point and of the current portfolio.
-- Fewer than 2 assets with usable history -> 422 with a clear message.
+- Fewer than 2 assets with usable history, or fewer than 12 common monthly observations -> 400 with a clear
+  `detail` (consistent with existing business-rule errors, e.g. `movimientos.py` overselling). 422 stays
+  reserved for FastAPI request validation (user decision, 2026-10-04).
+- Price provider (yfinance) failure -> 503, never reported as insufficient data (user decision, 2026-10-04).
+- The analysis window ends at the last fully completed month; the current month is never used.
+- Positions whose own history is shorter than the minimum are excluded before the calculation and listed
+  in the response (`excluidos`), so one recent listing cannot make the whole analysis fail.
+- Returns stay in each asset's native currency, as in the reference spreadsheet (no FX risk modelled).
 - Foreign or missing cartera -> 404.
 
 ## Tasks
 
 - [x] T1 — Historical monthly price series: batch fetch of adjusted monthly closes in `app/services/precios.py` + tests with mocked yfinance.
 - [x] T2 — Pure Markowitz math service `app/services/markowitz.py` (returns, covariance, min-variance, long-only frontier via scipy SLSQP, portfolio stats) + deterministic tests (spreadsheet data as fixture; closed-form oracle for unconstrained case) + `numpy`/`scipy` in `requirements.txt`.
-- [ ] T3 — Endpoint + schemas in `app/routers/posiciones.py` / `app/schemas.py`, wiring positions -> weights -> service, API tests (owner, foreign 404, <2 assets 422).
+- [x] T3 — Endpoint + schemas in `app/routers/posiciones.py` / `app/schemas.py`, wiring positions -> weights -> service, API tests (owner, foreign 404, insufficient data 400, provider failure 503, current month excluded, short-history ticker excluded). Includes review follow-ups: distinguish provider failure from no data in `obtener_precios_mensuales_batch`; end the window at the last completed month.
 
 ## Route declaration
 
@@ -69,7 +76,10 @@ cannot be done for the real portfolio inside the product.
 ## Delivery
 
 - Forecast: ~550-650 authored changed lines (T1 ~120, T2 ~250, T3 ~220) -> exceeds the ~400 budget.
-- Strategy: ask-on-risk (default); chain strategy pending user answer.
+- Strategy: ask-on-risk (default); chain strategy `stacked-to-main` (user choice, 2026-10-04).
+- Slices: PR-T1 `9d7ca27` -> develop (stacked on `chore/serena-setup` until #23 merges);
+  PR-T2 `47fb7de` -> T1 branch; PR-T3 -> T2 branch.
+- Running count: T1 ~221 + T2 ~624 + T3 ~606 authored lines (incl. tests and this doc).
 
 ## Progress / Evidence
 
@@ -90,6 +100,40 @@ cannot be done for the real portfolio inside the product.
   `pytest tests/test_precios.py tests/test_markowitz.py -q` -> 63 passed; `make check` -> 179 passed.
   Commit: `feat(markowitz)` (see `git log`).
 
+- 2026-10-04 RDD: committed range develop..47fb7de (chore #23 + T1 + T2) assessed high; user granted;
+  4-lens native review approved and acknowledged (lineage `review-f637dde9ce5f3c9d`, authority burned).
+  Non-blocking advisory findings (follow-ups, not review blockers):
+  - R3/R4 WARNING `app/services/precios.py:316-331`: a yfinance outage returns `{}` and would surface as
+    "insufficient data" (422) instead of an upstream error.
+  - R3 WARNING `app/services/precios.py:342-345`: the current, partial month is included as a full month.
+  - R3 SUGGESTION `app/services/markowitz.py:169-177`: `evaluar_cartera` does not reject NaN weights.
+  - R3 SUGGESTION `app/services/markowitz.py:218-229`: silent omission of unsolved frontier points untested.
+  - R2 SUGGESTION `app/services/markowitz.py:211-213`: tolerance constant reuse.
+  - R2 (chore #23) `app/routers/posiciones.py:70`, `app/routers/movimientos.py:54`: question/WARN notes as
+    comments; `.serena/memories/conventions.md:6` contradicts another memory.
+
+- 2026-10-04 decision (user): the current, incomplete month is never used; the analysis window always
+  ends at the last fully completed month. Folded into T3.
+
+- 2026-10-04 T3 done (delegated writer). Two work-unit commits:
+  - `6cf111e` fix(precios): `ProveedorPreciosError` raised when `yf.download` raises, returns an empty
+    frame, or no ticker has a single close (all-NaN); rows of the current month or after `fecha_fin` are
+    dropped; `fin_ultimo_mes_completo()` (today via patchable `_hoy`). Resolves review R3/R4
+    (precios.py:316-331) and R3 (precios.py:342-345). No other callers of the monthly fetch existed.
+  - feat(posiciones) (this commit): `GET /carteras/{id}/frontera-eficiente?anios=5&puntos=20`
+    (`anios` 1..20, `puntos` 2..100 -> FastAPI 422). Ownership via `get_owned_cartera` (404). Open
+    positions and EUR values reused from `resumen_cartera` (FIFO + batch prices/FX, as `/analisis`).
+    Window `[date(fin.year - anios, fin.month, 1), fin_ultimo_mes_completo()]` -> anios*12 returns.
+    `markowitz.separar_historicos_cortos` excludes tickers with < 12 own monthly returns before
+    alignment. `excluidos` lists `{ticker, motivo}` (sin_ticker, sin_precio_actual, sin_historico,
+    historico_insuficiente); `peso_excluido` = excluded EUR value share; current weights renormalised
+    over included assets. < 2 valued positions (checked before fetching) or `DatosInsuficientesError`
+    -> 400 with Spanish detail listing exclusions; `ProveedorPreciosError` -> 503.
+  RED: collection ImportError in test_api/test_precios/test_markowitz (`ProveedorPreciosError`,
+  `separar_historicos_cortos` missing). GREEN: `.venv/bin/python -m pytest tests/test_api.py
+  tests/test_precios.py tests/test_markowitz.py -q` -> 147 passed; `make check` -> ruff/black/mypy
+  clean, 201 passed.
+
 ## Next step
 
-T3.
+Open stacked PRs.

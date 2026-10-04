@@ -7,13 +7,15 @@ Las llamadas externas (FMP, Anthropic) se mockean.
 import logging
 import re
 from contextlib import ExitStack
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
+import numpy as np
 import pytest
 
 from app import models
 from app.auth.security import generate_reset_token
+from app.services.precios import ProveedorPreciosError
 
 BASE = "/api/v1"
 
@@ -440,6 +442,231 @@ class TestRentabilidadPeriodo:
         assert r.status_code == 404
 
 
+# ── Frontera eficiente (Markowitz) ────────────────────────────────────────────
+
+# "Hoy" fijo: la ventana debe acabar en el último mes cerrado (septiembre)
+HOY_FRONTERA = date(2026, 10, 4)
+ULTIMO_MES = date(2026, 9, 1)
+
+
+def _meses_hasta(ultimo: date, n: int) -> list[date]:
+    """Los `n` primeros de mes consecutivos que terminan en `ultimo`."""
+    indice = ultimo.year * 12 + ultimo.month - 1
+    return [
+        date((indice - k) // 12, (indice - k) % 12 + 1, 1) for k in range(n - 1, -1, -1)
+    ]
+
+
+def _serie_mensual(
+    n: int, semilla: int, ultimo: date = ULTIMO_MES
+) -> list[tuple[date, float]]:
+    """Serie de `n` cierres mensuales deterministas (paseo aleatorio con semilla)."""
+    rng = np.random.default_rng(semilla)
+    rentabilidades = rng.normal(0.01, 0.05, n - 1)
+    precios = 100.0 * np.cumprod(np.concatenate([[1.0], 1.0 + rentabilidades]))
+    return list(zip(_meses_hasta(ultimo, n), map(float, precios), strict=True))
+
+
+class TestFronteraEficiente:
+    # ticker -> (cantidad, precio actual); valor EUR: 1000, 1000, 2000
+    POSICIONES = {"AAA": (10, 100.0), "BBB": (20, 50.0), "CCC": (100, 20.0)}
+
+    def _crear_cartera(self, client, posiciones: dict[str, tuple[int, float]]):
+        """Cartera con una compra en EUR por ticker (ISIN ficticio por ticker)."""
+        cartera_id = client.post(f"{BASE}/carteras", json={"nombre": "Test"}).json()[
+            "id"
+        ]
+        enriquecer = AsyncMock(
+            side_effect=lambda isin: {
+                **MOCK_IA,
+                "moneda": "EUR",
+                "ticker": isin.removeprefix("XX"),
+            }
+        )
+        with patch("app.routers.movimientos.precios.enriquecer_por_isin", enriquecer):
+            for ticker, (cantidad, _) in posiciones.items():
+                r = client.post(
+                    f"{BASE}/movimientos",
+                    json={
+                        "cartera_id": cartera_id,
+                        "isin": f"XX{ticker}",
+                        "tipo": "compra",
+                        "fecha": "2024-01-15",
+                        "cantidad": cantidad,
+                        "precio": 10.0,
+                    },
+                )
+                assert r.status_code == 200
+        return cartera_id
+
+    def _mock_precios(self, posiciones, series=None, error=None):
+        """Parchea precios actuales, FX, series mensuales y la fecha de hoy.
+
+        Devuelve (contexto, mock de obtener_precios_mensuales_batch).
+        """
+        mensuales = (
+            AsyncMock(side_effect=error)
+            if error
+            else AsyncMock(return_value=series if series is not None else {})
+        )
+        contexto = patch.multiple(
+            "app.routers.posiciones.precios",
+            obtener_precios_batch=AsyncMock(
+                return_value={t: precio for t, (_, precio) in posiciones.items()}
+            ),
+            obtener_fx_batch=AsyncMock(return_value={}),
+            obtener_precios_mensuales_batch=mensuales,
+            _hoy=lambda: HOY_FRONTERA,
+        )
+        return contexto, mensuales
+
+    def _series_completas(self, tickers):
+        return {t: _serie_mensual(61, semilla) for semilla, t in enumerate(tickers)}
+
+    def test_frontera_de_la_cartera(self, auth_client):
+        cartera_id = self._crear_cartera(auth_client, self.POSICIONES)
+        series = self._series_completas(self.POSICIONES)
+        contexto, mensuales = self._mock_precios(self.POSICIONES, series)
+        with contexto:
+            r = auth_client.get(
+                f"{BASE}/carteras/{cartera_id}/frontera-eficiente",
+                params={"anios": 5, "puntos": 10},
+            )
+        assert r.status_code == 200, r.text
+        data = r.json()
+
+        # Ventana: 5 años que acaban en el último mes cerrado (nunca el actual)
+        assert data["fecha_inicio"] == "2021-09-01"
+        assert data["fecha_fin"] == "2026-09-30"
+        mensuales.assert_called_once()
+        args = mensuales.call_args.args
+        assert sorted(args[0]) == ["AAA", "BBB", "CCC"]
+        assert args[1:] == (date(2021, 9, 1), date(2026, 9, 30))
+
+        assert data["frecuencia"] == "mensual"
+        assert data["n_observaciones"] == 60
+        assert sorted(data["tickers"]) == ["AAA", "BBB", "CCC"]
+        assert len(data["rentabilidades_esperadas"]) == 3
+        cov = np.array(data["matriz_covarianzas"])
+        assert cov.shape == (3, 3)
+        np.testing.assert_allclose(cov, cov.T)
+        assert data["excluidos"] == []
+        assert data["peso_excluido"] == pytest.approx(0.0)
+
+        minima = data["cartera_minima_varianza"]
+        actual = data["cartera_actual"]
+        assert 1 <= len(data["frontera"]) <= 10
+        for punto in [*data["frontera"], minima, actual]:
+            pesos = punto["pesos"]
+            assert set(pesos) == {"AAA", "BBB", "CCC"}
+            assert all(0.0 <= w <= 1.0 for w in pesos.values())
+            assert sum(pesos.values()) == pytest.approx(1.0, abs=1e-6)
+            assert minima["volatilidad"] <= punto["volatilidad"] + 1e-12
+
+        # Pesos actuales = valor de mercado EUR de cada posición / total
+        assert actual["pesos"] == {
+            "AAA": pytest.approx(0.25),
+            "BBB": pytest.approx(0.25),
+            "CCC": pytest.approx(0.5),
+        }
+
+    def test_historico_corto_o_inexistente_se_excluye_y_se_informa(self, auth_client):
+        posiciones = {
+            **self.POSICIONES,
+            "NEW": (10, 100.0),  # recién listado: 6 meses
+            "SIN": (10, 100.0),  # sin ningún dato histórico
+        }
+        cartera_id = self._crear_cartera(auth_client, posiciones)
+        series = {
+            **self._series_completas(self.POSICIONES),
+            "NEW": _serie_mensual(6, semilla=99),
+        }
+        with self._mock_precios(posiciones, series)[0]:
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert sorted(data["tickers"]) == ["AAA", "BBB", "CCC"]
+        assert sorted(data["excluidos"], key=lambda e: e["ticker"]) == [
+            {"ticker": "NEW", "motivo": "historico_insuficiente"},
+            {"ticker": "SIN", "motivo": "sin_historico"},
+        ]
+        # 2000 EUR excluidos de 6000 EUR
+        assert data["peso_excluido"] == pytest.approx(1 / 3)
+        # Pesos actuales renormalizados sobre los activos incluidos
+        assert data["cartera_actual"]["pesos"] == {
+            "AAA": pytest.approx(0.25),
+            "BBB": pytest.approx(0.25),
+            "CCC": pytest.approx(0.5),
+        }
+
+    def test_menos_de_dos_activos_retorna_400(self, auth_client):
+        posiciones = {"AAA": (10, 100.0)}
+        cartera_id = self._crear_cartera(auth_client, posiciones)
+        contexto, mensuales = self._mock_precios(posiciones)
+        with contexto:
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 400
+        assert "al menos 2" in r.json()["detail"]
+        # Sin activos suficientes no se llega a consultar el histórico
+        mensuales.assert_not_called()
+
+    def test_un_solo_activo_con_historico_suficiente_retorna_400(self, auth_client):
+        posiciones = {"AAA": (10, 100.0), "NEW": (10, 100.0)}
+        cartera_id = self._crear_cartera(auth_client, posiciones)
+        series = {"AAA": _serie_mensual(61, 0), "NEW": _serie_mensual(6, 1)}
+        with self._mock_precios(posiciones, series)[0]:
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 400
+        detail = r.json()["detail"]
+        assert "al menos 2" in detail
+        assert "NEW" in detail
+
+    def test_pocas_observaciones_comunes_retorna_400(self, auth_client):
+        cartera_id = self._crear_cartera(auth_client, self.POSICIONES)
+        # Cada activo tiene 12 rentabilidades propias, pero no coinciden en el tiempo
+        series = {
+            "AAA": _serie_mensual(61, 0),
+            "BBB": _serie_mensual(13, 1, ultimo=date(2022, 9, 1)),
+            "CCC": _serie_mensual(13, 2),
+        }
+        with self._mock_precios(self.POSICIONES, series)[0]:
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 400
+        assert "observaciones" in r.json()["detail"]
+
+    def test_fallo_del_proveedor_retorna_503(self, auth_client):
+        cartera_id = self._crear_cartera(auth_client, self.POSICIONES)
+        error = ProveedorPreciosError("yfinance caído")
+        with self._mock_precios(self.POSICIONES, error=error)[0]:
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 503
+        assert "precios" in r.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "params", [{"anios": 0}, {"anios": 21}, {"puntos": 1}, {"puntos": 101}]
+    )
+    def test_parametros_invalidos_retornan_422(self, auth_client, params):
+        cartera_id = auth_client.post(
+            f"{BASE}/carteras", json={"nombre": "Test"}
+        ).json()["id"]
+        r = auth_client.get(
+            f"{BASE}/carteras/{cartera_id}/frontera-eficiente", params=params
+        )
+        assert r.status_code == 422
+
+    def test_cartera_inexistente_retorna_404(self, auth_client):
+        r = auth_client.get(f"{BASE}/carteras/9999/frontera-eficiente")
+        assert r.status_code == 404
+
+    def test_cartera_ajena_retorna_404(self, auth_client, second_auth_client):
+        foreign_id = self._crear_cartera(second_auth_client, self.POSICIONES)
+        contexto, mensuales = self._mock_precios(self.POSICIONES)
+        with contexto:
+            r = auth_client.get(f"{BASE}/carteras/{foreign_id}/frontera-eficiente")
+        assert r.status_code == 404
+        mensuales.assert_not_called()
+
+
 # ── Instrumentos ──────────────────────────────────────────────────────────────
 
 
@@ -696,6 +923,7 @@ class TestOwnershipAuthorization:
         assert client.get(f"{BASE}/carteras/1/resumen").status_code == 401
         assert client.get(f"{BASE}/carteras/1/analisis").status_code == 401
         assert client.post(f"{BASE}/carteras/1/backfill-fx").status_code == 401
+        assert client.get(f"{BASE}/carteras/1/frontera-eficiente").status_code == 401
 
     # -- Carteras are scoped to the owner -------------------------------------
 

@@ -1,13 +1,13 @@
 import asyncio
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.auth.security import get_owned_cartera
 from app.database import get_db
-from app.services import calculos, precios
+from app.services import calculos, markowitz, precios
 
 router = APIRouter(prefix="/carteras", tags=["Posiciones"])
 
@@ -376,3 +376,138 @@ async def rentabilidad_periodo(
         posiciones=posiciones_out,
         tickers_sin_dato=tickers_sin_dato,
     )
+
+
+@router.get(
+    "/{cartera_id}/frontera-eficiente",
+    response_model=schemas.FronteraEficienteCartera,
+)
+async def frontera_eficiente(
+    anios: int = Query(5, ge=1, le=20, description="Años de histórico mensual"),
+    puntos: int = Query(
+        markowitz.N_PUNTOS_FRONTERA, ge=2, le=100, description="Puntos de la frontera"
+    ),
+    cartera: models.Cartera = Depends(get_owned_cartera),
+    db: Session = Depends(get_db),
+):
+    """
+    Frontera eficiente de Markowitz (long-only) de las posiciones abiertas.
+
+    Rentabilidades simples mensuales en la moneda nativa de cada activo, sin
+    anualizar, en una ventana de `anios` años que acaba en el último mes
+    cerrado (el mes en curso nunca se usa). La cartera actual se pondera por
+    el valor de mercado EUR de cada posición.
+
+    Como en `/analisis`, la autorización se resuelve una vez con
+    `get_owned_cartera` y la cartera ya autorizada se pasa a `resumen_cartera`,
+    que aporta las posiciones abiertas (FIFO) valoradas con precios y FX batch.
+    """
+    resumen = await resumen_cartera(cartera=cartera, db=db)
+
+    excluidos: list[schemas.ActivoExcluido] = []
+    valor_por_ticker: dict[str, float] = {}
+    for posicion in resumen.posiciones:
+        instrumento = posicion.instrumento
+        if not instrumento.ticker:
+            excluidos.append(
+                schemas.ActivoExcluido(ticker=instrumento.isin, motivo="sin_ticker")
+            )
+        elif posicion.valor_actual_eur is None or posicion.valor_actual_eur <= 0:
+            excluidos.append(
+                schemas.ActivoExcluido(
+                    ticker=instrumento.ticker, motivo="sin_precio_actual"
+                )
+            )
+        else:
+            valor_por_ticker[instrumento.ticker] = (
+                valor_por_ticker.get(instrumento.ticker, 0.0)
+                + posicion.valor_actual_eur
+            )
+
+    if len(valor_por_ticker) < 2:
+        # Sin dos activos valorados no tiene sentido consultar el histórico
+        raise HTTPException(
+            status_code=400,
+            detail=_detalle_datos_insuficientes(
+                "Se necesitan al menos 2 posiciones abiertas con ticker y precio "
+                f"actual (hay {len(valor_por_ticker)}).",
+                excluidos,
+            ),
+        )
+
+    fecha_fin = precios.fin_ultimo_mes_completo()
+    # Desde el mes equivalente de hace `anios` años: anios*12 rentabilidades
+    fecha_inicio = date(fecha_fin.year - anios, fecha_fin.month, 1)
+    try:
+        series = await precios.obtener_precios_mensuales_batch(
+            list(valor_por_ticker), fecha_inicio, fecha_fin
+        )
+    except precios.ProveedorPreciosError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "No se pudieron obtener los precios históricos del proveedor de "
+                "precios. Inténtalo de nuevo más tarde."
+            ),
+        ) from e
+
+    # Un activo con histórico corto (salida a bolsa reciente) se excluye antes
+    # de alinear para que no deje sin datos a toda la cartera
+    suficientes, cortos = markowitz.separar_historicos_cortos(series)
+    for ticker in valor_por_ticker:
+        if ticker in cortos:
+            excluidos.append(
+                schemas.ActivoExcluido(ticker=ticker, motivo="historico_insuficiente")
+            )
+        elif ticker not in suficientes:
+            excluidos.append(
+                schemas.ActivoExcluido(ticker=ticker, motivo="sin_historico")
+            )
+
+    try:
+        estadisticas = markowitz.calcular_estadisticas_activos(suficientes)
+        frontera = markowitz.calcular_frontera_eficiente(estadisticas, n_puntos=puntos)
+        actual = markowitz.evaluar_cartera(
+            estadisticas, {t: valor_por_ticker[t] for t in estadisticas.tickers}
+        )
+    except markowitz.DatosInsuficientesError as e:
+        raise HTTPException(
+            status_code=400, detail=_detalle_datos_insuficientes(str(e), excluidos)
+        ) from e
+
+    valor_total = sum(valor_por_ticker.values())
+    valor_incluido = sum(valor_por_ticker[t] for t in estadisticas.tickers)
+
+    return schemas.FronteraEficienteCartera(
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
+        n_observaciones=estadisticas.n_observaciones,
+        tickers=estadisticas.tickers,
+        rentabilidades_esperadas=estadisticas.rentabilidades_esperadas.tolist(),
+        matriz_covarianzas=estadisticas.matriz_covarianzas.tolist(),
+        frontera=[_punto_cartera_out(p) for p in frontera.puntos],
+        cartera_minima_varianza=_punto_cartera_out(frontera.cartera_minima_varianza),
+        cartera_actual=_punto_cartera_out(actual),
+        excluidos=excluidos,
+        peso_excluido=(valor_total - valor_incluido) / valor_total,
+    )
+
+
+def _punto_cartera_out(punto: markowitz.PuntoCartera) -> schemas.PuntoCarteraOut:
+    return schemas.PuntoCarteraOut(
+        rentabilidad=punto.rentabilidad,
+        volatilidad=punto.volatilidad,
+        pesos=punto.pesos,
+    )
+
+
+def _detalle_datos_insuficientes(
+    motivo: str, excluidos: list[schemas.ActivoExcluido]
+) -> str:
+    detalle = f"No hay datos suficientes para calcular la frontera eficiente. {motivo}"
+    if excluidos:
+        detalle += " Excluidos: " + ", ".join(
+            f"{e.ticker} ({e.motivo})" for e in excluidos
+        )
+        detalle += "."
+    return detalle
