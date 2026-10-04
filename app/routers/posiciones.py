@@ -523,7 +523,6 @@ class _ResultadoFrontera:
     frontera: markowitz.FronteraEficiente
     actual: markowitz.PuntoCartera
     rentabilidades_actual: markowitz.Vector
-    referencia_con_cortos: markowitz.ReferenciaConCortos | None
 
 
 def _calcular_frontera(
@@ -551,7 +550,6 @@ def _calcular_frontera(
         rentabilidades_actual=markowitz.rentabilidades_cartera(
             rentabilidades, actual.pesos
         ),
-        referencia_con_cortos=markowitz.calcular_referencia_con_cortos(estadisticas),
     )
 
 
@@ -568,7 +566,6 @@ def _detalle_calculo_out(
     resultado: _ResultadoFrontera, valor_por_ticker: dict[str, float]
 ) -> schemas.DetalleCalculoFrontera:
     estadisticas = resultado.estadisticas
-    referencia = resultado.referencia_con_cortos
     return schemas.DetalleCalculoFrontera(
         datos=schemas.DatosEntradaFrontera(
             fechas_precios=resultado.fechas_precios,
@@ -584,20 +581,6 @@ def _detalle_calculo_out(
         cartera_actual=schemas.DetalleCarteraActual(
             valores_eur={t: valor_por_ticker[t] for t in estadisticas.tickers},
             rentabilidades=resultado.rentabilidades_actual.tolist(),
-        ),
-        referencia_con_cortos=(
-            None
-            if referencia is None
-            else schemas.ReferenciaConCortosOut(
-                matriz_covarianzas_inversa=referencia.matriz_covarianzas_inversa.tolist(),
-                a=referencia.a,
-                b=referencia.b,
-                d=referencia.d,
-                a_d_menos_b2=referencia.a_d_menos_b2,
-                cartera_minima_varianza=_punto_cartera_out(
-                    referencia.cartera_minima_varianza
-                ),
-            )
         ),
     )
 

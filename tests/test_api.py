@@ -643,28 +643,6 @@ class TestFronteraEficiente:
         ]:
             assert punto["varianza"] == pytest.approx(punto["volatilidad"] ** 2)
 
-        # Referencia analítica con ventas en corto (solución cerrada)
-        ref = detalle["referencia_con_cortos"]
-        assert ref is not None
-        cov = np.array(data["matriz_covarianzas"])
-        inversa = np.array(ref["matriz_covarianzas_inversa"])
-        np.testing.assert_allclose(inversa @ cov, np.eye(n_activos), atol=1e-8)
-        mu = np.array(data["rentabilidades_esperadas"])
-        unos = np.ones(n_activos)
-        assert ref["d"] == pytest.approx(unos @ inversa @ unos)
-        assert ref["b"] == pytest.approx(unos @ inversa @ mu)
-        assert ref["a"] == pytest.approx(mu @ inversa @ mu)
-        assert ref["a_d_menos_b2"] == pytest.approx(ref["a"] * ref["d"] - ref["b"] ** 2)
-        minima_cortos = ref["cartera_minima_varianza"]
-        assert sum(minima_cortos["pesos"].values()) == pytest.approx(1.0)
-        assert minima_cortos["varianza"] == pytest.approx(1 / ref["d"])
-        assert minima_cortos["rentabilidad"] == pytest.approx(ref["b"] / ref["d"])
-        # Sin la restricción long-only la varianza mínima nunca es mayor
-        assert (
-            minima_cortos["varianza"]
-            <= data["cartera_minima_varianza"]["varianza"] + 1e-12
-        )
-
     def test_historico_corto_o_inexistente_se_excluye_y_se_informa(self, auth_client):
         posiciones = {
             **self.POSICIONES,

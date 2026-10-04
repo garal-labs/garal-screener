@@ -18,7 +18,6 @@ from app.services.markowitz import (
     calcular_cartera_minima_varianza,
     calcular_estadisticas_activos,
     calcular_frontera_eficiente,
-    calcular_referencia_con_cortos,
     calcular_rentabilidades_mensuales,
     evaluar_cartera,
     rentabilidades_cartera,
@@ -416,53 +415,3 @@ class TestPuntoCarteraVarianza:
         assert frontera.cartera_minima_varianza.varianza == pytest.approx(
             0.000531617, rel=1e-4
         )
-
-
-class TestReferenciaConCortos:
-    def test_escalares_y_minima_varianza_de_la_hoja(self, estadisticas_hoja):
-        ref = calcular_referencia_con_cortos(estadisticas_hoja)
-        assert ref is not None
-
-        inversa = np.linalg.inv(COVARIANZAS_HOJA)
-        unos = np.ones(5)
-        np.testing.assert_allclose(ref.matriz_covarianzas_inversa, inversa)
-        # D solo depende de la covarianza: coincide con la hoja (1881.054099).
-        # A y B dependen de mu, que en el fixture está redondeada (la hoja da
-        # A = 1.539716599 y B = 44.59670947): se comparan con el recálculo.
-        assert ref.d == pytest.approx(1881.054099, abs=0.01)
-        assert ref.b == pytest.approx(unos @ inversa @ RENTABILIDADES_HOJA)
-        assert ref.a == pytest.approx(
-            RENTABILIDADES_HOJA @ inversa @ RENTABILIDADES_HOJA
-        )
-        assert ref.b == pytest.approx(44.6, abs=0.2)
-        assert ref.a == pytest.approx(1.54, abs=0.01)
-        assert ref.a_d_menos_b2 == pytest.approx(ref.a * ref.d - ref.b**2)
-        assert ref.a_d_menos_b2 > 0
-
-        minima = ref.cartera_minima_varianza
-        pesos = [minima.pesos[t] for t in TICKERS_HOJA]
-        np.testing.assert_allclose(
-            pesos, [0.1325, 0.1674, 0.3193, 0.2491, 0.1317], atol=1e-4
-        )
-        assert sum(pesos) == pytest.approx(1.0)
-        assert minima.varianza == pytest.approx(0.000531617, rel=1e-5)
-        assert minima.varianza == pytest.approx(1 / ref.d)
-        assert minima.volatilidad == pytest.approx(np.sqrt(1 / ref.d))
-        assert minima.rentabilidad == pytest.approx(ref.b / ref.d)
-
-    def test_admite_pesos_negativos(self):
-        # Mismo caso que en long-only: sin restricciones vende en corto Y
-        est = EstadisticasActivos(
-            tickers=["X", "Y"],
-            rentabilidades_esperadas=np.array([0.01, 0.02]),
-            matriz_covarianzas=np.array([[0.0010, 0.0018], [0.0018, 0.0040]]),
-            n_observaciones=60,
-        )
-        ref = calcular_referencia_con_cortos(est)
-        assert ref is not None
-        assert ref.cartera_minima_varianza.pesos["Y"] < 0
-
-    def test_covarianza_singular_devuelve_none(self):
-        precios = {"A": _serie(PRECIOS_A), "B": _serie([p * 2 for p in PRECIOS_A])}
-        est = calcular_estadisticas_activos(precios)
-        assert calcular_referencia_con_cortos(est) is None

@@ -289,33 +289,12 @@ class DetalleCarteraActual(BaseModel):
     )
 
 
-class ReferenciaConCortosOut(BaseModel):
-    """Solución cerrada con ventas en corto permitidas, como en la hoja de referencia."""
-
-    matriz_covarianzas_inversa: list[list[float]] = Field(
-        description="Σ⁻¹, en el orden de `tickers`"
-    )
-    a: float = Field(description="A = muᵀ Σ⁻¹ mu")
-    b: float = Field(description="B = 1ᵀ Σ⁻¹ mu (también llamada C)")
-    d: float = Field(description="D = 1ᵀ Σ⁻¹ 1")
-    a_d_menos_b2: float = Field(description="A·D - B²")
-    cartera_minima_varianza: PuntoCarteraOut = Field(
-        description=(
-            "Mínima varianza sin restricción long-only: pesos Σ⁻¹1 / D, "
-            "rentabilidad B/D, varianza 1/D"
-        )
-    )
-
-
 class DetalleCalculoFrontera(BaseModel):
     """Cómo se ha calculado el resultado, paso a paso (como la hoja de referencia)."""
 
     datos: DatosEntradaFrontera
     estadisticas: EstadisticasActivosOut
     cartera_actual: DetalleCarteraActual
-    referencia_con_cortos: ReferenciaConCortosOut | None = Field(
-        description="Null si la matriz de covarianzas es singular o mal condicionada"
-    )
 
 
 class FronteraEficienteCartera(BaseModel):

@@ -112,24 +112,6 @@ class FronteraEficiente:
     puntos: list[PuntoCartera]
 
 
-@dataclass(frozen=True, eq=False)
-class ReferenciaConCortos:
-    """
-    Solución cerrada con ventas en corto (sin 0 <= w), como en la hoja.
-
-    A = muᵀΣ⁻¹mu, B = 1ᵀΣ⁻¹mu (la "C" de algunos textos), D = 1ᵀΣ⁻¹1. La
-    cartera de mínima varianza sin restricciones es Σ⁻¹1 / D, con
-    rentabilidad B/D y varianza 1/D; sus pesos pueden ser negativos.
-    """
-
-    matriz_covarianzas_inversa: Matriz
-    a: float
-    b: float
-    d: float
-    a_d_menos_b2: float
-    cartera_minima_varianza: PuntoCartera
-
-
 # ── Rentabilidades y estadísticas ─────────────────────────────────────────────
 
 
@@ -362,45 +344,6 @@ def calcular_frontera_eficiente(
         if pesos is not None:
             puntos.append(_punto(estadisticas, pesos))
     return FronteraEficiente(estadisticas, minima, puntos)
-
-
-def calcular_referencia_con_cortos(
-    estadisticas: EstadisticasActivos,
-) -> ReferenciaConCortos | None:
-    """
-    Referencia analítica con ventas en corto permitidas (solución cerrada).
-
-    Devuelve None si la covarianza es singular o está mal condicionada (mismo
-    criterio que la frontera long-only), porque entonces Σ⁻¹ no es fiable.
-    """
-    try:
-        _validar_estadisticas(estadisticas)
-    except DatosInsuficientesError:
-        return None
-
-    inversa: Matriz = np.linalg.inv(estadisticas.matriz_covarianzas).astype(np.float64)
-    mu = estadisticas.rentabilidades_esperadas
-    unos = np.ones(len(mu))
-    a = float(mu @ inversa @ mu)
-    b = float(unos @ inversa @ mu)
-    d = float(unos @ inversa @ unos)
-    if not np.all(np.isfinite(inversa)) or d <= 0:
-        return None
-
-    pesos = inversa @ unos / d
-    minima = PuntoCartera(
-        rentabilidad=b / d,
-        volatilidad=float(np.sqrt(1.0 / d)),
-        pesos={t: float(w) for t, w in zip(estadisticas.tickers, pesos, strict=True)},
-    )
-    return ReferenciaConCortos(
-        matriz_covarianzas_inversa=inversa,
-        a=a,
-        b=b,
-        d=d,
-        a_d_menos_b2=a * d - b**2,
-        cartera_minima_varianza=minima,
-    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
