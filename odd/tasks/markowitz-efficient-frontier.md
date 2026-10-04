@@ -134,6 +134,35 @@ cannot be done for the real portfolio inside the product.
   tests/test_precios.py tests/test_markowitz.py -q` -> 147 passed; `make check` -> ruff/black/mypy
   clean, 201 passed.
 
+- 2026-10-04 RDD: T3-only range (47fb7de..62757ae, medium) declined by user; whole branch
+  develop..62757ae (high, 25 files / 2011 lines) granted, 4-lens review approved and acknowledged
+  (lineage `review-e26c363d8228b2bd`, authority burned). Parent spot check: focused tests 147 passed.
+  Non-blocking advisory WARNINGs on T3 (candidates for a follow-up fix before PRs):
+  - R4 `app/routers/posiciones.py:467-472`: CPU-bound SLSQP runs inside the async handler and blocks the event loop.
+  - R4 `app/routers/posiciones.py:445-452`: the 503 path does not log the provider failure.
+  - R3 `app/routers/posiciones.py:415-425`: a NaN current EUR value can propagate into the weights.
+  - R2 `app/schemas.py:211-215`: schema readability warning.
+  Suggestions: R1 `posiciones.py:386-389`; R2 `markowitz.py:237`, `.gitignore:43`; R3 untested frontier
+  point omission and singular-covariance API path. Chore-only notes (posiciones.py:70, movimientos.py:54,
+  `.serena/memories/conventions.md:6`) repeat the earlier review.
+- `.serena/project.yml` was rewritten by Serena itself (regenerated language list); not part of this feature.
+
+- 2026-10-04 T3 review follow-up (delegated writer), commit `fix(posiciones)` (see `git log`); resolves the
+  four T3 WARNINGs:
+  - R4 event loop: the pure calculation (`calcular_estadisticas_activos`, `calcular_frontera_eficiente`,
+    `evaluar_cartera`) moved to `_calcular_frontera` and awaited via `fastapi.concurrency.run_in_threadpool`;
+    `DatosInsuficientesError` -> 400 unchanged.
+  - R4 logging: `ProveedorPreciosError` logged with `logger.warning` (module logger, as in
+    `app/auth/router.py`) with cartera id and error; the 503 detail stays generic.
+  - R3 NaN: `_es_valor_positivo` treats None, non-finite or <= 0 EUR values as `sin_precio_actual`, so
+    current weights and `peso_excluido` are always finite.
+  - R2 schema: `ActivoExcluido.motivo` typed as `MotivoExclusion` Literal with each reason documented;
+    JSON field names/shapes unchanged (OpenAPI now exposes the enum).
+  RED: 4 new API tests failed (no log record; NaN/inf ticker kept as an asset or reported as `sin_historico`;
+  `run_in_threadpool` absent from the router). GREEN: `.venv/bin/python -m pytest tests/test_api.py
+  tests/test_precios.py tests/test_markowitz.py -q` -> 151 passed; `make check` -> ruff/black/mypy clean,
+  205 passed.
+
 ## Next step
 
 Open stacked PRs.

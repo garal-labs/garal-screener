@@ -208,11 +208,20 @@ class PuntoCarteraOut(BaseModel):
     pesos: dict[str, float]
 
 
+# Por qué una posición abierta queda fuera del análisis:
+# - sin_ticker: el instrumento no tiene ticker con el que pedir precios
+# - sin_precio_actual: sin valor de mercado EUR actual conocido, finito y > 0
+# - sin_historico: el proveedor no devolvió ningún precio mensual
+# - historico_insuficiente: menos rentabilidades mensuales propias que el mínimo
+MotivoExclusion = Literal[
+    "sin_ticker", "sin_precio_actual", "sin_historico", "historico_insuficiente"
+]
+
+
 class ActivoExcluido(BaseModel):
     # Ticker (o ISIN si el instrumento no tiene ticker)
     ticker: str
-    # sin_ticker | sin_precio_actual | sin_historico | historico_insuficiente
-    motivo: str
+    motivo: MotivoExclusion
 
 
 class FronteraEficienteCartera(BaseModel):

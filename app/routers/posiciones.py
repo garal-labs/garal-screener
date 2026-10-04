@@ -1,13 +1,18 @@
 import asyncio
+import logging
+import math
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.auth.security import get_owned_cartera
 from app.database import get_db
 from app.services import calculos, markowitz, precios
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/carteras", tags=["Posiciones"])
 
@@ -412,7 +417,7 @@ async def frontera_eficiente(
             excluidos.append(
                 schemas.ActivoExcluido(ticker=instrumento.isin, motivo="sin_ticker")
             )
-        elif posicion.valor_actual_eur is None or posicion.valor_actual_eur <= 0:
+        elif not _es_valor_positivo(posicion.valor_actual_eur):
             excluidos.append(
                 schemas.ActivoExcluido(
                     ticker=instrumento.ticker, motivo="sin_precio_actual"
@@ -443,6 +448,12 @@ async def frontera_eficiente(
             list(valor_por_ticker), fecha_inicio, fecha_fin
         )
     except precios.ProveedorPreciosError as e:
+        logger.warning(
+            "Fallo del proveedor de precios en la frontera eficiente de la "
+            "cartera %s: %s",
+            cartera.id,
+            e,
+        )
         raise HTTPException(
             status_code=503,
             detail=(
@@ -465,10 +476,9 @@ async def frontera_eficiente(
             )
 
     try:
-        estadisticas = markowitz.calcular_estadisticas_activos(suficientes)
-        frontera = markowitz.calcular_frontera_eficiente(estadisticas, n_puntos=puntos)
-        actual = markowitz.evaluar_cartera(
-            estadisticas, {t: valor_por_ticker[t] for t in estadisticas.tickers}
+        # SLSQP es CPU intensivo: se ejecuta en un hilo para no bloquear el event loop
+        estadisticas, frontera, actual = await run_in_threadpool(
+            _calcular_frontera, suficientes, valor_por_ticker, puntos
         )
     except markowitz.DatosInsuficientesError as e:
         raise HTTPException(
@@ -491,6 +501,27 @@ async def frontera_eficiente(
         excluidos=excluidos,
         peso_excluido=(valor_total - valor_incluido) / valor_total,
     )
+
+
+def _es_valor_positivo(valor: float | None) -> bool:
+    """Un valor EUR utilizable como peso: conocido, finito y mayor que cero."""
+    return valor is not None and math.isfinite(valor) and valor > 0
+
+
+def _calcular_frontera(
+    series: dict[str, list[tuple[date, float]]],
+    valor_por_ticker: dict[str, float],
+    puntos: int,
+) -> tuple[
+    markowitz.EstadisticasActivos, markowitz.FronteraEficiente, markowitz.PuntoCartera
+]:
+    """Cálculo puro (sin E/S) de estadísticas, frontera y cartera actual."""
+    estadisticas = markowitz.calcular_estadisticas_activos(series)
+    frontera = markowitz.calcular_frontera_eficiente(estadisticas, n_puntos=puntos)
+    actual = markowitz.evaluar_cartera(
+        estadisticas, {t: valor_por_ticker[t] for t in estadisticas.tickers}
+    )
+    return estadisticas, frontera, actual
 
 
 def _punto_cartera_out(punto: markowitz.PuntoCartera) -> schemas.PuntoCarteraOut:

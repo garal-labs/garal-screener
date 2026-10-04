@@ -642,6 +642,59 @@ class TestFronteraEficiente:
         assert r.status_code == 503
         assert "precios" in r.json()["detail"]
 
+    def test_fallo_del_proveedor_se_registra_en_el_log(self, auth_client, caplog):
+        cartera_id = self._crear_cartera(auth_client, self.POSICIONES)
+        error = ProveedorPreciosError("yfinance caído")
+        caplog.set_level(logging.WARNING, logger="app.routers.posiciones")
+        with self._mock_precios(self.POSICIONES, error=error)[0]:
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 503
+        # El detalle HTTP no filtra el error interno; el log sí lo conserva
+        assert "yfinance caído" not in r.json()["detail"]
+        registros = [
+            rec for rec in caplog.records if rec.name == "app.routers.posiciones"
+        ]
+        assert len(registros) == 1
+        assert registros[0].levelno >= logging.WARNING
+        mensaje = registros[0].getMessage()
+        assert str(cartera_id) in mensaje
+        assert "yfinance caído" in mensaje
+
+    @pytest.mark.parametrize("precio", [float("nan"), float("inf")])
+    def test_valor_actual_no_finito_se_excluye_sin_precio_actual(
+        self, auth_client, precio
+    ):
+        posiciones = {**self.POSICIONES, "NAN": (10, precio)}
+        cartera_id = self._crear_cartera(auth_client, posiciones)
+        series = self._series_completas(self.POSICIONES)
+        with self._mock_precios(posiciones, series)[0]:
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert sorted(data["tickers"]) == ["AAA", "BBB", "CCC"]
+        assert data["excluidos"] == [{"ticker": "NAN", "motivo": "sin_precio_actual"}]
+        # Sin valor conocido no cuenta en el peso excluido
+        assert data["peso_excluido"] == pytest.approx(0.0)
+        assert data["cartera_actual"]["pesos"] == {
+            "AAA": pytest.approx(0.25),
+            "BBB": pytest.approx(0.25),
+            "CCC": pytest.approx(0.5),
+        }
+
+    def test_optimizacion_se_ejecuta_fuera_del_event_loop(self, auth_client):
+        from fastapi.concurrency import run_in_threadpool
+
+        cartera_id = self._crear_cartera(auth_client, self.POSICIONES)
+        series = self._series_completas(self.POSICIONES)
+        espia = AsyncMock(side_effect=run_in_threadpool)
+        with (
+            self._mock_precios(self.POSICIONES, series)[0],
+            patch("app.routers.posiciones.run_in_threadpool", espia),
+        ):
+            r = auth_client.get(f"{BASE}/carteras/{cartera_id}/frontera-eficiente")
+        assert r.status_code == 200, r.text
+        espia.assert_awaited_once()
+
     @pytest.mark.parametrize(
         "params", [{"anios": 0}, {"anios": 21}, {"puntos": 1}, {"puntos": 101}]
     )
