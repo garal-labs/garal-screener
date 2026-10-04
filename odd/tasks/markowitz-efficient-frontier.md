@@ -79,6 +79,12 @@ cannot be done for the real portfolio inside the product.
 - Strategy: ask-on-risk (default); chain strategy `stacked-to-main` (user choice, 2026-10-04).
 - Slices: PR-T1 `9d7ca27` -> develop (stacked on `chore/serena-setup` until #23 merges);
   PR-T2 `47fb7de` -> T1 branch; PR-T3 -> T2 branch.
+- Opened 2026-10-04: #24 `feat/markowitz-01-precios-mensuales` -> `chore/serena-setup` (+307/-0);
+  #25 `feat/markowitz-02-calculo` -> #24 branch (+636/-3, size:exception: ~310 lines are tests);
+  #26 `feat/markowitz-frontera-eficiente` -> #25 branch (+760/-20, size:exception: endpoint contract
+  verified end to end, ~280 lines of API tests). Repo does not delete merged branches: retarget #24 to
+  `develop` by hand after #23 merges.
+- RDD for fix commit `3b4da49`: assessed medium, `under_budget` (136 lines), no review due.
 - Running count: T1 ~221 + T2 ~624 + T3 ~606 authored lines (incl. tests and this doc).
 
 ## Progress / Evidence
@@ -165,4 +171,4 @@ cannot be done for the real portfolio inside the product.
 
 ## Next step
 
-Open stacked PRs.
+User reviews and merges #23 -> #24 -> #25 -> #26 in order. Frontend chart in `investment-portfolio-ui` is a separate future feature.
