@@ -283,6 +283,27 @@ async def obtener_precios_by_date_batch(
 # ── Series históricas mensuales ───────────────────────────────────────────────
 
 
+class ProveedorPreciosError(RuntimeError):
+    """
+    El proveedor de precios (yfinance) ha fallado o no ha devuelto ningún dato
+    utilizable. Distinto de "un ticker no tiene histórico": la capa de API lo
+    traduce a un error del servicio externo (503), nunca a datos insuficientes.
+    """
+
+
+def _hoy() -> date:
+    """Fecha actual, aislada para poder fijarla en los tests."""
+    return date.today()
+
+
+def fin_ultimo_mes_completo(hoy: date | None = None) -> date:
+    """
+    Último día del último mes ya cerrado. El mes en curso (incompleto) nunca
+    cuenta, ni siquiera el día 1: hoy=2026-10-04 -> 2026-09-30.
+    """
+    return (hoy or _hoy()).replace(day=1) - timedelta(days=1)
+
+
 async def obtener_precios_mensuales_batch(
     tickers: list[str], fecha_inicio: date, fecha_fin: date
 ) -> dict[str, list[tuple[date, float]]]:
@@ -291,7 +312,10 @@ async def obtener_precios_mensuales_batch(
     de varios tickers con una única descarga de yfinance.
 
     Devuelve {ticker: [(primer_dia_del_mes, cierre), ...]} ordenado por fecha,
-    en la moneda nativa de cada instrumento. Los tickers sin datos se omiten.
+    en la moneda nativa de cada instrumento. Solo incluye meses cerrados (nunca
+    el mes en curso) y no posteriores a `fecha_fin`. Los tickers sin datos se
+    omiten; si la descarga falla o no trae datos de ningún ticker lanza
+    ProveedorPreciosError.
     """
     tickers_unicos = list(dict.fromkeys(t for t in tickers if t))
     if not tickers_unicos:
@@ -310,8 +334,12 @@ def _fetch_precios_mensuales(
 
     Las fechas se normalizan al primer día del mes para poder alinear
     instrumentos de mercados distintos; si yfinance devuelve dos filas del
-    mismo mes (el mes en curso puede venir fechado a mitad de mes) prevalece
-    la más reciente. Los NaN se descartan.
+    mismo mes prevalece la más reciente. Los NaN se descartan, igual que las
+    filas del mes en curso (incompleto) o posteriores a `fecha_fin`.
+
+    yfinance a menudo no lanza excepción ante un fallo: lo registra y devuelve
+    columnas vacías o todo NaN. Por eso, si ningún ticker trae ni un cierre se
+    considera fallo del proveedor y no "sin datos".
     """
     try:
         df = yf.download(
@@ -324,27 +352,41 @@ def _fetch_precios_mensuales(
             threads=True,
         )
     except Exception as e:
-        print(f"[Precios mensuales] Error descargando {tickers}: {e}")
-        return {}
+        raise ProveedorPreciosError(
+            f"Error descargando precios mensuales de {tickers}: {e}"
+        ) from e
 
     if df is None or df.empty or "Close" not in df.columns.get_level_values(0):
-        return {}
+        raise ProveedorPreciosError(
+            f"La descarga de precios mensuales de {tickers} no devolvió datos"
+        )
 
     cierres = df["Close"]
     if isinstance(cierres, pd.Series):
         # Un solo ticker con columnas planas: la Serie es directamente su cierre
         cierres = cierres.to_frame(name=tickers[0])
 
+    # Primer día del mes en curso: a partir de él nada está cerrado todavía
+    mes_en_curso = _hoy().replace(day=1)
+    hay_datos = False
     resultado: dict[str, list[tuple[date, float]]] = {}
     for ticker in tickers:
         if ticker not in cierres.columns:
             continue
         por_mes: dict[date, float] = {}
         for fecha, valor in cierres[ticker].dropna().sort_index().items():
+            hay_datos = True
             marca = pd.Timestamp(fecha)
-            por_mes[date(marca.year, marca.month, 1)] = float(valor)
+            mes = date(marca.year, marca.month, 1)
+            if mes < mes_en_curso and mes <= fecha_fin:
+                por_mes[mes] = float(valor)
         if por_mes:
             resultado[ticker] = sorted(por_mes.items())
+
+    if not hay_datos:
+        raise ProveedorPreciosError(
+            f"La descarga de precios mensuales de {tickers} no trajo ningún cierre"
+        )
     return resultado
 
 
