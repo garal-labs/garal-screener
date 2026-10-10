@@ -19,6 +19,7 @@ from app.services.markowitz import (
     calcular_frontera_eficiente,
     calcular_rentabilidades_mensuales,
     evaluar_cartera,
+    separar_historicos_cortos,
 )
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -285,3 +286,27 @@ class TestEvaluarCartera:
     def test_pesos_nulos_lanzan_error(self, estadisticas_hoja):
         with pytest.raises(ValueError, match="pesos"):
             evaluar_cartera(estadisticas_hoja, {"OTRO": 1.0})
+
+
+class TestSepararHistoricosCortos:
+    def test_activos_con_menos_rentabilidades_que_el_minimo_se_separan(self):
+        precios = {
+            "A": _serie(PRECIOS_A),  # 13 precios -> 12 rentabilidades
+            "NUEVO": _serie(PRECIOS_B[:6]),  # 6 precios -> 5 rentabilidades
+            "C": _serie(PRECIOS_C),
+            "VACIO": [],
+        }
+        suficientes, cortos = separar_historicos_cortos(precios, min_observaciones=12)
+        assert list(suficientes) == ["A", "C"]
+        assert suficientes["A"] == precios["A"]
+        assert cortos == ["NUEVO", "VACIO"]
+
+    def test_huecos_no_cuentan_como_rentabilidad(self):
+        # 13 precios pero falta un mes intermedio: solo 11 rentabilidades propias
+        serie = _serie(PRECIOS_A + [130])
+        con_hueco = serie[:5] + serie[6:]
+        suficientes, cortos = separar_historicos_cortos(
+            {"A": con_hueco}, min_observaciones=12
+        )
+        assert suficientes == {}
+        assert cortos == ["A"]

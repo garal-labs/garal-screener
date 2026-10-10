@@ -145,6 +145,31 @@ def calcular_estadisticas_activos(
     )
 
 
+def separar_historicos_cortos(
+    precios: dict[str, list[tuple[date, float]]],
+    min_observaciones: int = MIN_OBSERVACIONES,
+) -> tuple[dict[str, list[tuple[date, float]]], list[str]]:
+    """
+    Separa los activos con al menos `min_observaciones` rentabilidades
+    mensuales propias de los que no las tienen (p. ej. una salida a bolsa
+    reciente), para excluirlos antes de alinear: si no, al recortar a los
+    meses comunes un solo activo nuevo dejaría a toda la cartera sin datos.
+
+    Devuelve (series_suficientes, tickers_cortos) conservando el orden.
+    """
+    suficientes: dict[str, list[tuple[date, float]]] = {}
+    cortos: list[str] = []
+    for ticker, serie in precios.items():
+        n_rentabilidades = len(
+            calcular_rentabilidades_mensuales({ticker: serie}).fechas
+        )
+        if n_rentabilidades >= min_observaciones:
+            suficientes[ticker] = serie
+        else:
+            cortos.append(ticker)
+    return suficientes, cortos
+
+
 # ── Carteras ──────────────────────────────────────────────────────────────────
 
 

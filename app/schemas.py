@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -194,3 +195,51 @@ class AnalisisCartera(BaseModel):
     por_pais: list[GrupoAnalisis]
     por_tipo: list[GrupoAnalisis]
     por_moneda: list[GrupoAnalisis]
+
+
+# -- Frontera eficiente (Markowitz) -------------------------------------------
+
+
+class PuntoCarteraOut(BaseModel):
+    # Rentabilidad y volatilidad mensuales (sin anualizar)
+    rentabilidad: float
+    volatilidad: float
+    # Peso de cada ticker en [0, 1]; suman 1
+    pesos: dict[str, float]
+
+
+# Por qué una posición abierta queda fuera del análisis:
+# - sin_ticker: el instrumento no tiene ticker con el que pedir precios
+# - sin_precio_actual: sin valor de mercado EUR actual conocido, finito y > 0
+# - sin_historico: el proveedor no devolvió ningún precio mensual
+# - historico_insuficiente: menos rentabilidades mensuales propias que el mínimo
+MotivoExclusion = Literal[
+    "sin_ticker", "sin_precio_actual", "sin_historico", "historico_insuficiente"
+]
+
+
+class ActivoExcluido(BaseModel):
+    # Ticker (o ISIN si el instrumento no tiene ticker)
+    ticker: str
+    motivo: MotivoExclusion
+
+
+class FronteraEficienteCartera(BaseModel):
+    fecha_inicio: date
+    # Último día del último mes cerrado: el mes en curso nunca se usa
+    fecha_fin: date
+    frecuencia: Literal["mensual"] = "mensual"
+    n_observaciones: int
+    # Activos analizados; ordenan rentabilidades_esperadas y matriz_covarianzas
+    tickers: list[str]
+    rentabilidades_esperadas: list[float]
+    matriz_covarianzas: list[list[float]]
+    # Ordenada por rentabilidad creciente; el primero es la de mínima varianza
+    frontera: list[PuntoCarteraOut]
+    cartera_minima_varianza: PuntoCarteraOut
+    # Pesos = valor de mercado EUR actual, renormalizado sobre los incluidos
+    cartera_actual: PuntoCarteraOut
+    excluidos: list[ActivoExcluido]
+    # Fracción [0, 1] del valor EUR de la cartera que queda fuera del análisis
+    # (posiciones sin precio actual no tienen valor conocido y no cuentan)
+    peso_excluido: float
