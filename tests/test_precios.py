@@ -20,6 +20,7 @@ from app.services.precios import (
     obtener_precio_by_date,
     obtener_precios_batch,
     obtener_precios_by_date_batch,
+    obtener_precios_mensuales_batch,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -361,3 +362,154 @@ class TestObtenerFxBatch:
             await obtener_fx_batch(["USD", "USD", "usd"])
         # Solo debe llamarse una vez (set de monedas únicas)
         assert len(calls) == 1
+
+
+# ── obtener_precios_mensuales_batch ───────────────────────────────────────────
+
+
+def _df_descarga_multi(datos: dict[str, list[float]], fechas: list[str]):
+    """Simula yf.download con varios tickers: columnas MultiIndex (Price, Ticker)."""
+    columnas = pd.MultiIndex.from_tuples(
+        [(campo, t) for campo in ("Close", "Open") for t in datos],
+        names=["Price", "Ticker"],
+    )
+    valores = {
+        (campo, t): serie for campo in ("Close", "Open") for t, serie in datos.items()
+    }
+    return pd.DataFrame(valores, index=pd.to_datetime(fechas), columns=columnas)
+
+
+class TestFetchPreciosMensuales:
+    FECHAS = ["2024-01-01", "2024-02-01", "2024-03-01"]
+
+    def test_varios_tickers_devuelve_series_ordenadas(self):
+        from app.services.precios import _fetch_precios_mensuales
+
+        df = _df_descarga_multi(
+            {"AAPL": [100.0, 110.0, 121.0], "MSFT": [50.0, 55.0, 60.5]}, self.FECHAS
+        )
+        with patch("yfinance.download", return_value=df) as mock_dl:
+            result = _fetch_precios_mensuales(
+                ["AAPL", "MSFT"], _date(2024, 1, 1), _date(2024, 3, 31)
+            )
+        # Una única descarga para todos los tickers, mensual y ajustada
+        mock_dl.assert_called_once()
+        kwargs = mock_dl.call_args.kwargs
+        assert kwargs["interval"] == "1mo"
+        assert kwargs["auto_adjust"] is True
+        assert result == {
+            "AAPL": [
+                (_date(2024, 1, 1), 100.0),
+                (_date(2024, 2, 1), 110.0),
+                (_date(2024, 3, 1), 121.0),
+            ],
+            "MSFT": [
+                (_date(2024, 1, 1), 50.0),
+                (_date(2024, 2, 1), 55.0),
+                (_date(2024, 3, 1), 60.5),
+            ],
+        }
+
+    def test_un_ticker_con_columnas_planas(self):
+        from app.services.precios import _fetch_precios_mensuales
+
+        df = pd.DataFrame(
+            {"Close": [10.0, 11.0], "Open": [9.0, 10.5]},
+            index=pd.to_datetime(self.FECHAS[:2]),
+        )
+        with patch("yfinance.download", return_value=df):
+            result = _fetch_precios_mensuales(
+                ["SAN.MC"], _date(2024, 1, 1), _date(2024, 2, 28)
+            )
+        assert result == {
+            "SAN.MC": [(_date(2024, 1, 1), 10.0), (_date(2024, 2, 1), 11.0)]
+        }
+
+    def test_un_ticker_con_columnas_multiindex(self):
+        from app.services.precios import _fetch_precios_mensuales
+
+        df = _df_descarga_multi({"SAN.MC": [10.0, 11.0]}, self.FECHAS[:2])
+        with patch("yfinance.download", return_value=df):
+            result = _fetch_precios_mensuales(
+                ["SAN.MC"], _date(2024, 1, 1), _date(2024, 2, 28)
+            )
+        assert result == {
+            "SAN.MC": [(_date(2024, 1, 1), 10.0), (_date(2024, 2, 1), 11.0)]
+        }
+
+    def test_ticker_sin_datos_se_omite_y_nan_se_descartan(self):
+        from app.services.precios import _fetch_precios_mensuales
+
+        nan = float("nan")
+        df = _df_descarga_multi(
+            {"AAPL": [100.0, nan, 121.0], "BAD": [nan, nan, nan]}, self.FECHAS
+        )
+        with patch("yfinance.download", return_value=df):
+            result = _fetch_precios_mensuales(
+                ["AAPL", "BAD"], _date(2024, 1, 1), _date(2024, 3, 31)
+            )
+        assert result == {
+            "AAPL": [(_date(2024, 1, 1), 100.0), (_date(2024, 3, 1), 121.0)]
+        }
+
+    def test_fechas_se_normalizan_al_primer_dia_del_mes(self):
+        from app.services.precios import _fetch_precios_mensuales
+
+        # El mes en curso puede venir fechado a mitad de mes; si coincide con
+        # otra fila del mismo mes prevalece la más reciente.
+        df = _df_descarga_multi(
+            {"AAPL": [100.0, 110.0, 112.0], "MSFT": [50.0, 55.0, 56.0]},
+            ["2024-01-01", "2024-02-01", "2024-02-15"],
+        )
+        with patch("yfinance.download", return_value=df):
+            result = _fetch_precios_mensuales(
+                ["AAPL", "MSFT"], _date(2024, 1, 1), _date(2024, 2, 15)
+            )
+        assert result["AAPL"] == [
+            (_date(2024, 1, 1), 100.0),
+            (_date(2024, 2, 1), 112.0),
+        ]
+
+    def test_error_de_red_devuelve_dict_vacio(self):
+        from app.services.precios import _fetch_precios_mensuales
+
+        with patch("yfinance.download", side_effect=ConnectionError("timeout")):
+            result = _fetch_precios_mensuales(
+                ["AAPL"], _date(2024, 1, 1), _date(2024, 3, 31)
+            )
+        assert result == {}
+
+    def test_descarga_vacia_devuelve_dict_vacio(self):
+        from app.services.precios import _fetch_precios_mensuales
+
+        with patch("yfinance.download", return_value=pd.DataFrame()):
+            result = _fetch_precios_mensuales(
+                ["AAPL"], _date(2024, 1, 1), _date(2024, 3, 31)
+            )
+        assert result == {}
+
+
+class TestObtenerPreciosMensualesBatch:
+    @pytest.mark.asyncio
+    async def test_lista_vacia_no_llama_a_yfinance(self):
+        with patch("app.services.precios._fetch_precios_mensuales") as mock_fetch:
+            result = await obtener_precios_mensuales_batch(
+                [], _date(2024, 1, 1), _date(2024, 3, 31)
+            )
+        assert result == {}
+        mock_fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_deduplica_tickers_y_delega_en_una_descarga(self):
+        serie = [(_date(2024, 1, 1), 100.0)]
+        with patch(
+            "app.services.precios._fetch_precios_mensuales",
+            return_value={"AAPL": serie},
+        ) as mock_fetch:
+            result = await obtener_precios_mensuales_batch(
+                ["AAPL", "AAPL", ""], _date(2024, 1, 1), _date(2024, 3, 31)
+            )
+        assert result == {"AAPL": serie}
+        mock_fetch.assert_called_once_with(
+            ["AAPL"], _date(2024, 1, 1), _date(2024, 3, 31)
+        )
