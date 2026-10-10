@@ -53,7 +53,7 @@ cannot be done for the real portfolio inside the product.
 ## Tasks
 
 - [x] T1 — Historical monthly price series: batch fetch of adjusted monthly closes in `app/services/precios.py` + tests with mocked yfinance.
-- [ ] T2 — Pure Markowitz math service `app/services/markowitz.py` (returns, covariance, min-variance, long-only frontier via scipy SLSQP, portfolio stats) + deterministic tests (spreadsheet data as fixture; closed-form oracle for unconstrained case) + `numpy`/`scipy` in `requirements.txt`.
+- [x] T2 — Pure Markowitz math service `app/services/markowitz.py` (returns, covariance, min-variance, long-only frontier via scipy SLSQP, portfolio stats) + deterministic tests (spreadsheet data as fixture; closed-form oracle for unconstrained case) + `numpy`/`scipy` in `requirements.txt`.
 - [ ] T3 — Endpoint + schemas in `app/routers/posiciones.py` / `app/schemas.py`, wiring positions -> weights -> service, API tests (owner, foreign 404, <2 assets 422).
 
 ## Route declaration
@@ -79,8 +79,17 @@ cannot be done for the real portfolio inside the product.
   normalised to the 1st of the month (latest row wins within a month), NaN dropped, tickers without
   data omitted, download errors logged -> `{}`. Handles flat (single ticker) and MultiIndex columns.
   RED: collection ImportError (`obtener_precios_mensuales_batch` missing). GREEN:
-  `pytest tests/test_precios.py -q` -> 41 passed. Commit: see `git log` (`feat(precios): ...`).
+  `pytest tests/test_precios.py -q` -> 41 passed. Commit: `9d7ca27` feat(precios).
+- 2026-10-04 T2 done (delegated writer). `app/services/markowitz.py`: aligned monthly simple returns
+  (a month missing in any asset is dropped for all; returns never span two months), mean + sample
+  covariance (n-1), long-only min-variance and frontier via SLSQP (analytic jacobians, objective
+  scaled to O(1), feasible warm start), `DatosInsuficientesError` for <2 assets, <12 common monthly
+  observations, or singular covariance. `numpy>=2.0`, `scipy>=1.13` added to requirements.
+  Key oracle: long-only min-var weights match the spreadsheet closed form S^-1 1 / D (atol 1e-3),
+  variance 1/D = 0.000531617. RED: collection ImportError (module missing). GREEN:
+  `pytest tests/test_precios.py tests/test_markowitz.py -q` -> 63 passed; `make check` -> 179 passed.
+  Commit: `feat(markowitz)` (see `git log`).
 
 ## Next step
 
-T2.
+T3.
